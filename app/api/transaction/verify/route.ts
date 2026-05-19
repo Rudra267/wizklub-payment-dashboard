@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isDashboardAuthenticated, unauthorizedDashboardResponse } from "../../auth-utils";
 
 function readSuccess(payload: unknown) {
   if (!payload || typeof payload !== "object") {
@@ -54,6 +55,10 @@ function readMessage(payload: unknown, fallback: string) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isDashboardAuthenticated(request)) {
+    return unauthorizedDashboardResponse();
+  }
+
   const body = (await request.json().catch(() => null)) as {
     transactionId?: string;
   } | null;

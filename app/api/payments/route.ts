@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isDashboardAuthenticated, unauthorizedDashboardResponse } from "../auth-utils";
 
 type PaymentRecord = {
   addedOn: string;
@@ -62,6 +63,10 @@ function extractPayments(payload: unknown): PaymentRecord[] {
 }
 
 export async function GET(request: NextRequest) {
+  if (!isDashboardAuthenticated(request)) {
+    return unauthorizedDashboardResponse();
+  }
+
   const admissionNo = request.nextUrl.searchParams.get("admissionNo")?.trim();
 
   if (!admissionNo) {
