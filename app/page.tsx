@@ -654,7 +654,7 @@ function PaymentSkeleton() {
 }
 
 function PaymentStatusBadge({ status }: { status: string }) {
-  const displayedStatus = displayValue(status);
+  const displayedStatus = status.trim() || "TXN_PENDING";
 
   return (
     <span
