@@ -395,7 +395,6 @@ function MobileHeader({ onMenuOpen }: { onMenuOpen: () => void }) {
           <Menu className="h-5 w-5" />
         </Button>
       </div>
-      <div aria-hidden="true" className="mb-6 h-[90px] xl:hidden" />
     </>
   );
 }
@@ -917,7 +916,6 @@ export default function Home() {
   if (authState === "loggedOut") {
     return (
       <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[#020817] p-5">
-        <div className="absolute inset-8 rounded-[30px] border border-[#00E7B0]/10 bg-[#061226]/60 shadow-[0_20px_60px_rgba(0,0,0,.4)]" />
         <div className="absolute left-[12%] top-[16%] h-40 w-72 rounded-[26px] bg-[#00E7B0]/12 blur-2xl" />
         <div className="absolute bottom-[12%] right-[10%] h-48 w-72 rounded-[26px] bg-[#4D6FFF]/12 blur-2xl" />
         <motion.section
@@ -998,7 +996,7 @@ export default function Home() {
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
       />
-      <section className="relative min-h-screen px-4 py-5 sm:px-6 lg:px-8 xl:ml-[280px] xl:px-10 xl:py-8">
+      <section className="relative min-h-screen px-4 pb-5 pt-[112px] sm:px-6 lg:px-8 xl:ml-[280px] xl:px-10 xl:py-8">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_3%,rgba(0,231,176,.10),transparent_24%),radial-gradient(circle_at_80%_4%,rgba(77,111,255,.08),transparent_24%)]" />
         <div className="relative z-10">
         <MobileHeader onMenuOpen={() => setIsMobileMenuOpen(true)} />
