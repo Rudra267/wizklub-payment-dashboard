@@ -114,6 +114,120 @@ function statusClass(status: string) {
   return "pending";
 }
 
+function isTxnSuccessStatus(status: string) {
+  return status.trim().toUpperCase() === "TXN_SUCCESS";
+}
+
+function getPaymentDateKey(addedOn: string) {
+  const value = addedOn.trim();
+
+  if (!value) {
+    return "";
+  }
+
+  const monthNames: Record<string, string> = {
+    apr: "04",
+    april: "04",
+    aug: "08",
+    august: "08",
+    dec: "12",
+    december: "12",
+    feb: "02",
+    february: "02",
+    jan: "01",
+    january: "01",
+    jul: "07",
+    july: "07",
+    jun: "06",
+    june: "06",
+    mar: "03",
+    march: "03",
+    may: "05",
+    nov: "11",
+    november: "11",
+    oct: "10",
+    october: "10",
+    sep: "09",
+    sept: "09",
+    september: "09"
+  };
+
+  const textMonthMatch = value.match(/\b(\d{1,2})[-/\s]([a-zA-Z]{3,9})[-/\s](\d{2,4})\b/);
+
+  if (textMonthMatch) {
+    const [, day, monthName, yearValue] = textMonthMatch;
+    const month = monthNames[monthName.toLowerCase()];
+    const year = yearValue.length === 2 ? `20${yearValue}` : yearValue;
+
+    if (month) {
+      return `${year}-${month}-${day.padStart(2, "0")}`;
+    }
+  }
+
+  const yearFirstMatch = value.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+
+  if (yearFirstMatch) {
+    const [, year, month, day] = yearFirstMatch;
+
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const dayFirstMatch = value.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b/);
+
+  if (dayFirstMatch) {
+    const [, day, month, yearValue] = dayFirstMatch;
+    const year = yearValue.length === 2 ? `20${yearValue}` : yearValue;
+
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  return value.split(/\s+/)[0]?.toLowerCase() || "";
+}
+
+function getPaymentGroupKey(payment: Payment) {
+  const dateKey = getPaymentDateKey(payment.addedOn);
+  const productKey = payment.productName.trim().replace(/\s+/g, " ").toLowerCase();
+
+  if (!dateKey || !productKey) {
+    return "";
+  }
+
+  return `${dateKey}|${productKey}`;
+}
+
+function normalizePaymentGroupStatuses(paymentRecords: Payment[]) {
+  const successfulGroups = new Set(
+    paymentRecords
+      .filter((payment) => isTxnSuccessStatus(payment.paymentStatus))
+      .map((payment) => getPaymentGroupKey(payment))
+      .filter(Boolean)
+  );
+
+  return paymentRecords.map((payment) => {
+    const groupKey = getPaymentGroupKey(payment);
+
+    if (isTxnSuccessStatus(payment.paymentStatus)) {
+      return {
+        ...payment,
+        paymentStatus: "TXN_SUCCESS"
+      };
+    }
+
+    if (groupKey && successfulGroups.has(groupKey)) {
+      return {
+        ...payment,
+        paymentStatus: "TXN_FAILED"
+      };
+    }
+
+    return {
+      ...payment,
+      paymentStatus:
+        statusClass(payment.paymentStatus) === "failed" ? "TXN_FAILED" : "TXN_PENDING"
+    };
+  });
+}
+
 function normalizeAdmissionNo(value: string) {
   const withoutSpaces = value.toUpperCase().replace(/\s/g, "");
   const withoutRepeatedPrefix = withoutSpaces.replace(/^(SCS)+/, "");
@@ -1003,12 +1117,14 @@ export default function Home() {
         throw new Error(result.message || "Unable to fetch payment details.");
       }
 
-      setPayments(result.data);
+      const paymentRecords = normalizePaymentGroupStatuses(result.data);
+
+      setPayments(paymentRecords);
       setLookupState("success");
       setLookupMessage(
-        result.data.length
-          ? `Found ${result.data.length} payment record${
-              result.data.length === 1 ? "" : "s"
+        paymentRecords.length
+          ? `Found ${paymentRecords.length} payment record${
+              paymentRecords.length === 1 ? "" : "s"
             }.`
           : "No payment records found for this admission number."
       );
