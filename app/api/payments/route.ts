@@ -12,27 +12,62 @@ type PaymentRecord = {
 type RawPaymentRecord = Partial<PaymentRecord> & {
   added_on?: string;
   addedDate?: string;
+  date?: string;
   individual_product_name?: string;
+  order_id?: string;
+  paidAmount?: number | string;
+  paid_amount?: number | string;
+  paymentAmount?: number | string;
+  payment_amount?: number | string;
   transaction_id?: string;
+  transactionNo?: string;
+  txn_id?: string;
   txnId?: string;
   payment_status?: string;
+  razorpay_payment_status?: string;
   status?: string;
+  status_name?: string;
+  totalAmount?: number | string;
+  total_amount?: number | string;
   product_name?: string;
+  product_title?: string;
   product?: string;
 };
 
 function normalizeRecord(record: RawPaymentRecord): PaymentRecord {
   return {
-    addedOn: record.addedOn || record.added_on || record.addedDate || "",
-    amount: record.amount ?? "",
-    paymentStatus: record.paymentStatus || record.payment_status || record.status || "",
+    addedOn: record.addedOn || record.added_on || record.addedDate || record.date || "",
+    amount:
+      record.amount ??
+      record.paidAmount ??
+      record.paid_amount ??
+      record.paymentAmount ??
+      record.payment_amount ??
+      record.totalAmount ??
+      record.total_amount ??
+      "",
+    paymentStatus:
+      record.paymentStatus ||
+      record.payment_status ||
+      record.razorpay_payment_status ||
+      record.status_name ||
+      record.status ||
+      "",
     productName:
       record.productName ||
       record.individual_product_name ||
       record.product_name ||
+      record.product_title ||
       record.product ||
       "",
-    transactionId: record.transactionId || record.transaction_id || record.txnId || ""
+    transactionId:
+      record.transactionId ||
+      record.transaction_id ||
+      record.txnId ||
+      record.txn_id ||
+      record.transactionNo ||
+      record.order_id ||
+      ""
   };
 }
 

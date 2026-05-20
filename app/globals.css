@@ -12,11 +12,14 @@
 }
 
 html {
+  overflow-x: hidden;
   min-height: 100%;
   scroll-behavior: smooth;
 }
 
 body {
+  width: 100%;
+  overflow-x: hidden;
   min-height: 100%;
   margin: 0;
   background:

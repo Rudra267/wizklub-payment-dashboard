@@ -82,11 +82,15 @@ const chartBase = [
 ];
 
 function formatAmount(amount: number | string) {
+  if (typeof amount === "string" && !amount.trim()) {
+    return "Not available";
+  }
+
   const numericAmount =
     typeof amount === "number" ? amount : Number(String(amount).replace(/,/g, ""));
 
   if (Number.isNaN(numericAmount)) {
-    return String(amount);
+    return displayValue(amount);
   }
 
   return new Intl.NumberFormat("en-IN", {
@@ -140,6 +144,12 @@ function toAmountNumber(amount: number | string) {
     typeof amount === "number" ? amount : Number(String(amount).replace(/,/g, ""));
 
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function displayValue(value: number | string) {
+  const text = String(value ?? "").trim();
+
+  return text || "Not available";
 }
 
 function MiniTooltip({
@@ -585,7 +595,7 @@ function SectionHeading({
       >
         {icon}
       </div>
-      <div>
+      <div className="min-w-0">
         <h2 className="text-[20px] font-semibold leading-tight text-white">{title}</h2>
         <p className="mt-2 text-sm font-normal text-[#8CA3C7]">{description}</p>
       </div>
@@ -639,6 +649,171 @@ function PaymentSkeleton() {
           <span className="h-4 rounded-full bg-white/10" />
         </div>
       ))}
+    </div>
+  );
+}
+
+function PaymentStatusBadge({ status }: { status: string }) {
+  const displayedStatus = displayValue(status);
+
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize",
+        statusClass(displayedStatus) === "success" &&
+          "bg-[#22C55E]/12 text-[#22C55E]",
+        statusClass(displayedStatus) === "failed" &&
+          "bg-[#FF4D6D]/12 text-[#FF4D6D]",
+        statusClass(displayedStatus) === "pending" &&
+          "bg-[#FFC857]/12 text-[#FFC857]"
+      )}
+    >
+      {displayedStatus}
+    </span>
+  );
+}
+
+function TransactionCopyButton({
+  copiedTransactionId,
+  onCopy,
+  transactionId
+}: {
+  copiedTransactionId: string;
+  onCopy: (value: string) => void;
+  transactionId: string;
+}) {
+  const displayedTransactionId = displayValue(transactionId);
+  const canCopy = Boolean(transactionId.trim());
+
+  return (
+    <button
+      className="group relative inline-flex min-w-0 max-w-full items-center gap-2 text-left font-semibold text-[#4D6FFF] disabled:cursor-default disabled:text-[#8CA3C7]"
+      disabled={!canCopy}
+      onClick={() => onCopy(transactionId)}
+      type="button"
+    >
+      <span className="min-w-0 break-all">{displayedTransactionId}</span>
+      {canCopy ? (
+        <Copy className="h-4 w-4 shrink-0 opacity-70 transition group-hover:opacity-100" />
+      ) : null}
+      {canCopy ? (
+        <span className="pointer-events-none absolute -top-10 left-0 z-20 hidden rounded-[7px] border border-[#4D6FFF]/20 bg-[#06162E] px-3 py-2 text-xs font-semibold text-white opacity-0 shadow-[0_12px_28px_rgba(0,0,0,.32)] transition duration-150 group-hover:translate-y-[-2px] group-hover:opacity-100 sm:block">
+          {copiedTransactionId === transactionId ? "Copied" : "Click to copy"}
+        </span>
+      ) : null}
+      <span className="sr-only">
+        {copiedTransactionId === transactionId ? "Copied" : "Copy transaction ID"}
+      </span>
+    </button>
+  );
+}
+
+function PaymentDetailItem({
+  children,
+  label
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-[6px] border border-white/8 bg-[#07172D]/70 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8CA3C7]">
+        {label}
+      </p>
+      <div className="mt-1 text-sm font-semibold leading-5 text-white">{children}</div>
+    </div>
+  );
+}
+
+function PaymentRecords({
+  copiedTransactionId,
+  onCopyTransactionId,
+  payments
+}: {
+  copiedTransactionId: string;
+  onCopyTransactionId: (value: string) => void;
+  payments: Payment[];
+}) {
+  return (
+    <div className="mt-6 px-4 pb-5 sm:px-7 sm:pb-6">
+      <div className="grid gap-3 md:hidden">
+        {payments.map((payment) => (
+          <article
+            className="rounded-[8px] border border-white/8 bg-white/5 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.035)]"
+            key={`${payment.transactionId}-${payment.addedOn}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8CA3C7]">
+                  Transaction ID
+                </p>
+                <div className="mt-1 text-sm">
+                  <TransactionCopyButton
+                    copiedTransactionId={copiedTransactionId}
+                    onCopy={onCopyTransactionId}
+                    transactionId={payment.transactionId}
+                  />
+                </div>
+              </div>
+              <PaymentStatusBadge status={payment.paymentStatus} />
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <PaymentDetailItem label="Added On">
+                {displayValue(payment.addedOn)}
+              </PaymentDetailItem>
+              <PaymentDetailItem label="Amount">
+                {formatAmount(payment.amount)}
+              </PaymentDetailItem>
+              <PaymentDetailItem label="Product">
+                <span className="break-words">{displayValue(payment.productName)}</span>
+              </PaymentDetailItem>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[760px] border-separate border-spacing-y-3">
+          <thead>
+            <tr className="text-left text-xs font-semibold uppercase tracking-[0.08em] text-[#8CA3C7]">
+              <th className="px-4 py-2">Added On</th>
+              <th className="px-4 py-2">Transaction ID</th>
+              <th className="px-4 py-2">Amount</th>
+              <th className="px-4 py-2">Status</th>
+              <th className="px-4 py-2">Product</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payments.map((payment) => (
+              <tr
+                className="rounded-2xl bg-white/5 text-sm text-white transition hover:bg-white/8"
+                key={`${payment.transactionId}-${payment.addedOn}`}
+              >
+                <td className="rounded-l-2xl px-4 py-4">
+                  {displayValue(payment.addedOn)}
+                </td>
+                <td className="px-4 py-4">
+                  <TransactionCopyButton
+                    copiedTransactionId={copiedTransactionId}
+                    onCopy={onCopyTransactionId}
+                    transactionId={payment.transactionId}
+                  />
+                </td>
+                <td className="px-4 py-4 font-bold">{formatAmount(payment.amount)}</td>
+                <td className="px-4 py-4">
+                  <PaymentStatusBadge status={payment.paymentStatus} />
+                </td>
+                <td className="max-w-[220px] rounded-r-2xl px-4 py-4">
+                  <span className="block break-words">
+                    {displayValue(payment.productName)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -726,7 +901,7 @@ export default function Home() {
       data: chartBase.map((item, index) => ({ value: item.value + index })),
       icon: Check,
       label: "Successful Payments",
-      subLabel: `Success rate ${summary.successRate}%`,
+      subLabel: "Total success records",
       value: String(summary.successful)
     },
     {
@@ -735,11 +910,7 @@ export default function Home() {
       data: chartBase.map((item, index) => ({ value: Math.max(1, item.value - index) })),
       icon: X,
       label: "Failed Payments",
-      subLabel: `Failure rate ${
-        summary.totalRecords
-          ? Math.round((summary.failed / summary.totalRecords) * 100)
-          : 0
-      }%`,
+      subLabel: "Total failure records",
       value: String(summary.failed)
     },
     {
@@ -990,15 +1161,15 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#020817] font-sans text-white">
+    <main className="min-h-screen overflow-x-hidden bg-[#020817] font-sans text-white">
       <Sidebar />
       <MobileSidebar
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
       />
-      <section className="relative min-h-screen px-4 pb-5 pt-[112px] sm:px-6 lg:px-8 xl:ml-[280px] xl:px-10 xl:py-8">
+      <section className="relative min-h-screen px-3 pb-5 pt-[112px] sm:px-6 lg:px-8 xl:ml-[280px] xl:px-10 xl:py-8">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_3%,rgba(0,231,176,.10),transparent_24%),radial-gradient(circle_at_80%_4%,rgba(77,111,255,.08),transparent_24%)]" />
-        <div className="relative z-10">
+        <div className="relative z-10 min-w-0">
         <MobileHeader onMenuOpen={() => setIsMobileMenuOpen(true)} />
 
         <header className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
@@ -1030,21 +1201,21 @@ export default function Home() {
           ))}
         </section>
 
-        <section className="mt-8 grid gap-7 lg:grid-cols-[minmax(0,1.6fr)_minmax(360px,.94fr)]">
-          <div className="grid gap-7">
+        <section className="mt-8 grid min-w-0 gap-7 lg:grid-cols-[minmax(0,1.6fr)_minmax(360px,.94fr)]">
+          <div className="grid min-w-0 gap-7">
             <motion.div
               animate={{ opacity: 1, y: 0 }}
               initial={{ opacity: 0, y: 18 }}
               transition={{ delay: 0.12, duration: 0.42 }}
             >
-              <Card className="relative overflow-hidden rounded-[8px] border border-[#00E7B0]/58 bg-[linear-gradient(145deg,rgba(8,20,39,.72),rgba(3,11,24,.56))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.32),0_0_20px_rgba(0,231,176,.06)] sm:p-5">
+              <Card className="relative min-w-0 overflow-hidden rounded-[8px] border border-[#00E7B0]/58 bg-[linear-gradient(145deg,rgba(8,20,39,.72),rgba(3,11,24,.56))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.32),0_0_20px_rgba(0,231,176,.06)] sm:p-5">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(0,231,176,.055),transparent_32%),radial-gradient(circle_at_88%_100%,rgba(77,111,255,.055),transparent_34%)]" />
                 <div className="relative z-10">
                 <div className="flex items-center gap-3">
                   <div className="grid h-[48px] w-[48px] shrink-0 place-items-center rounded-[8px] bg-[#00E7B0]/10 text-[#00E7B0] shadow-[0_0_24px_rgba(0,231,176,.08)]">
                     <AdmissionCapIcon className="h-9 w-9" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h2 className="text-[18px] font-semibold leading-tight text-white">
                       Admission Lookup
                     </h2>
@@ -1070,7 +1241,7 @@ export default function Home() {
                     />
                     <AdmissionInputIcon className="pointer-events-none absolute right-3.5 top-1/2 h-7 w-7 -translate-y-1/2 text-[#00E7B0]" />
                   </div>
-                  <Button className="h-[48px] rounded-[6px] whitespace-nowrap px-4" disabled={lookupState === "loading"} type="submit">
+                  <Button className="h-[48px] w-full min-w-0 rounded-[6px] px-4" disabled={lookupState === "loading"} type="submit">
                     {lookupState === "loading" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
@@ -1104,7 +1275,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 18 }}
               transition={{ delay: 0.18, duration: 0.42 }}
             >
-              <Card className="min-h-[430px] overflow-hidden border-t-2 border-t-[#8B5CF6]">
+              <Card className="min-h-[430px] min-w-0 overflow-hidden border-t-2 border-t-[#8B5CF6]">
                 <div className="p-6 pb-0 sm:p-7 sm:pb-0">
                   <SectionHeading
                     description="Payment data will appear here after lookup"
@@ -1117,70 +1288,11 @@ export default function Home() {
                 {lookupState === "loading" ? (
                   <PaymentSkeleton />
                 ) : payments.length > 0 ? (
-                  <div className="mt-6 overflow-x-auto px-6 pb-6 sm:px-7">
-                    <table className="w-full min-w-[760px] border-separate border-spacing-y-3">
-                      <thead>
-                        <tr className="text-left text-xs font-semibold uppercase tracking-[0.08em] text-[#8CA3C7]">
-                          <th className="px-4 py-2">Added On</th>
-                          <th className="px-4 py-2">Transaction ID</th>
-                          <th className="px-4 py-2">Amount</th>
-                          <th className="px-4 py-2">Status</th>
-                          <th className="px-4 py-2">Product</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payments.map((payment) => (
-                          <tr
-                            className="rounded-2xl bg-white/5 text-sm text-white transition hover:bg-white/8"
-                            key={`${payment.transactionId}-${payment.addedOn}`}
-                          >
-                            <td className="rounded-l-2xl px-4 py-4">{payment.addedOn}</td>
-                            <td className="px-4 py-4">
-                              <button
-                                className="group relative inline-flex max-w-[240px] items-center gap-2 text-left font-semibold text-[#4D6FFF]"
-                                onClick={() => handleCopyTransactionId(payment.transactionId)}
-                                type="button"
-                              >
-                                <span className="truncate">{payment.transactionId}</span>
-                                <Copy className="h-4 w-4 shrink-0 opacity-70 transition group-hover:opacity-100" />
-                                <span className="pointer-events-none absolute -top-10 left-0 z-20 rounded-[7px] border border-[#4D6FFF]/20 bg-[#06162E] px-3 py-2 text-xs font-semibold text-white opacity-0 shadow-[0_12px_28px_rgba(0,0,0,.32)] transition duration-150 group-hover:translate-y-[-2px] group-hover:opacity-100">
-                                  {copiedTransactionId === payment.transactionId
-                                    ? "Copied"
-                                    : "Click to copy"}
-                                </span>
-                                <span className="sr-only">
-                                  {copiedTransactionId === payment.transactionId
-                                    ? "Copied"
-                                    : "Copy transaction ID"}
-                                </span>
-                              </button>
-                            </td>
-                            <td className="px-4 py-4 font-bold">
-                              {formatAmount(payment.amount)}
-                            </td>
-                            <td className="px-4 py-4">
-                              <span
-                                className={cn(
-                                  "inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize",
-                                  statusClass(payment.paymentStatus) === "success" &&
-                                    "bg-[#22C55E]/12 text-[#22C55E]",
-                                  statusClass(payment.paymentStatus) === "failed" &&
-                                    "bg-[#FF4D6D]/12 text-[#FF4D6D]",
-                                  statusClass(payment.paymentStatus) === "pending" &&
-                                    "bg-[#FFC857]/12 text-[#FFC857]"
-                                )}
-                              >
-                                {payment.paymentStatus}
-                              </span>
-                            </td>
-                            <td className="rounded-r-2xl px-4 py-4">
-                              {payment.productName}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <PaymentRecords
+                    copiedTransactionId={copiedTransactionId}
+                    onCopyTransactionId={handleCopyTransactionId}
+                    payments={payments}
+                  />
                 ) : (
                   <PaymentEmptyState />
                 )}
@@ -1188,20 +1300,20 @@ export default function Home() {
             </motion.div>
           </div>
 
-          <aside className="grid content-start gap-7">
+          <aside className="grid min-w-0 content-start gap-7">
             <motion.div
               animate={{ opacity: 1, y: 0 }}
               initial={{ opacity: 0, y: 18 }}
               transition={{ delay: 0.25, duration: 0.42 }}
             >
-              <Card className="relative overflow-hidden rounded-[8px] border-[#4D6FFF]/70 bg-[linear-gradient(145deg,rgba(8,20,39,.72),rgba(3,11,24,.56))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.32),0_0_28px_rgba(77,111,255,.1)]">
+              <Card className="relative min-w-0 overflow-hidden rounded-[8px] border-[#4D6FFF]/70 bg-[linear-gradient(145deg,rgba(8,20,39,.72),rgba(3,11,24,.56))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.32),0_0_28px_rgba(77,111,255,.1)] sm:p-5">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_18%,rgba(77,111,255,.08),transparent_32%),radial-gradient(circle_at_88%_100%,rgba(0,231,176,.045),transparent_34%)]" />
                 <div className="relative z-10">
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[8px] bg-[#172D7D]/70 text-[#6F8BFF] shadow-[0_0_24px_rgba(77,111,255,.12)]">
                     <VerificationShieldIcon className="h-8 w-8 text-[#4D6FFF]" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h2 className="text-[16px] font-semibold leading-tight text-white">
                       Transaction Verification
                     </h2>
@@ -1223,7 +1335,7 @@ export default function Home() {
                     <ScanQrCode className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white" strokeWidth={2.2} />
                   </div>
                   <Button
-                    className="h-11 rounded-[6px] bg-gradient-to-r from-[#315EFF] to-[#2826C8] text-[13px] shadow-[0_0_34px_rgba(77,111,255,.24)] hover:shadow-[0_0_40px_rgba(77,111,255,.34)]"
+                    className="h-11 w-full min-w-0 rounded-[6px] bg-gradient-to-r from-[#315EFF] to-[#2826C8] px-3 text-[13px] shadow-[0_0_34px_rgba(77,111,255,.24)] hover:shadow-[0_0_40px_rgba(77,111,255,.34)]"
                     disabled={verifyState === "loading"}
                     type="submit"
                     variant="blue"
@@ -1239,7 +1351,7 @@ export default function Home() {
 
                 <div
                   className={cn(
-                    "mt-6 flex gap-4 rounded-[6px] border border-[#263852] bg-[#07172D]/72 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.035)]",
+                    "mt-6 flex min-w-0 gap-3 rounded-[6px] border border-[#263852] bg-[#07172D]/72 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,.035)] sm:gap-4 sm:p-4",
                     verifyState === "success" && "border-[#22C55E]/25 bg-[#22C55E]/10",
                     verifyState === "error" && "border-[#FF4D6D]/25 bg-[#FF4D6D]/10"
                   )}
@@ -1261,7 +1373,7 @@ export default function Home() {
                       </span>
                     )}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[12px] font-semibold text-white">
                       {verifyMessage || "Verification result will appear here"}
                     </p>
