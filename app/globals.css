@@ -28,6 +28,9 @@ body {
     var(--background);
   color: var(--foreground);
   font-family: var(--font-inter);
+  /* Disable mouse text selection globally. Remove this block to re-enable it. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 button,
@@ -41,6 +44,15 @@ button {
 
 button:disabled {
   cursor: not-allowed;
+}
+
+/* Keep selection available in editable fields so typing, copy, and paste work normally. */
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable=""] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 ::selection {
