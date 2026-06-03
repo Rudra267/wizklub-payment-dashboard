@@ -25,6 +25,8 @@ const DEFAULT_UNIFORM_PAYMENT_IDS_API =
 const DEFAULT_UNIFORM_RECEIPT_API =
   "http://192.168.0.6/varna_api/uniform_online_receipt_pdf.php";
 const RECEIPT_TOKEN = "chaitanya";
+const DEFAULT_RECEIPT_FETCH_TIMEOUT_MS = 15_000;
+const DEFAULT_RECEIPT_DOWNLOAD_CONCURRENCY = 12;
 
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index;
@@ -169,13 +171,74 @@ function extractTransactionIds(payload: UniformPaymentsPayload) {
     return [];
   }
 
-  return payload.data
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter(Boolean);
+  return Array.from(
+    new Set(
+      payload.data
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+    )
+  );
 }
 
 async function readJson(response: Response) {
   return (await response.json().catch(() => null)) as unknown;
+}
+
+function readPositiveInteger(value: string | undefined, fallback: number, max: number) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return Math.min(Math.floor(parsed), max);
+}
+
+async function fetchWithTimeout(url: URL | string, init: RequestInit = {}) {
+  const timeoutMs = readPositiveInteger(
+    process.env.UNIFORM_RECEIPT_FETCH_TIMEOUT_MS,
+    DEFAULT_RECEIPT_FETCH_TIMEOUT_MS,
+    60_000
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: init.signal || controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function mapWithConcurrency<T, U>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<U>
+) {
+  const results: U[] = [];
+  let nextIndex = 0;
+
+  async function worker() {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+
+      if (index >= items.length) {
+        return;
+      }
+
+      results[index] = await mapper(items[index]!);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  );
+
+  return results;
 }
 
 async function getReceiptPath(transactionId: string) {
@@ -185,7 +248,7 @@ async function getReceiptPath(transactionId: string) {
   receiptUrl.searchParams.set("token", process.env.UNIFORM_RECEIPT_TOKEN || RECEIPT_TOKEN);
   receiptUrl.searchParams.set("online_transaction_no", transactionId);
 
-  const response = await fetch(receiptUrl, {
+  const response = await fetchWithTimeout(receiptUrl, {
     headers: {
       Accept: "application/json"
     },
@@ -201,7 +264,7 @@ async function getReceiptPath(transactionId: string) {
 }
 
 async function downloadPdf(receiptPath: string) {
-  const response = await fetch(receiptPath, {
+  const response = await fetchWithTimeout(receiptPath, {
     headers: {
       Accept: "application/pdf,*/*"
     },
@@ -269,20 +332,26 @@ export async function GET(request: NextRequest) {
     const usedNames = new Set<string>();
     const failures: string[] = [];
 
-    for (const transactionId of transactionIds) {
+    const concurrency = readPositiveInteger(
+      process.env.UNIFORM_RECEIPT_DOWNLOAD_CONCURRENCY,
+      DEFAULT_RECEIPT_DOWNLOAD_CONCURRENCY,
+      25
+    );
+
+    await mapWithConcurrency(transactionIds, concurrency, async (transactionId) => {
       try {
         const receiptPath = await getReceiptPath(transactionId);
 
         if (!receiptPath) {
           failures.push(`${transactionId}: receipt path not found`);
-          continue;
+          return;
         }
 
         const pdf = await downloadPdf(receiptPath);
 
         if (!pdf) {
           failures.push(`${transactionId}: PDF download failed`);
-          continue;
+          return;
         }
 
         const pathName = new URL(receiptPath).pathname.split("/").pop();
@@ -291,7 +360,7 @@ export async function GET(request: NextRequest) {
       } catch {
         failures.push(`${transactionId}: failed`);
       }
-    }
+    });
 
     if (failures.length) {
       entries.push({
