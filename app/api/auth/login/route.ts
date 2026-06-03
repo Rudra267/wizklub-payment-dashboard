@@ -10,15 +10,17 @@ export async function POST(request: NextRequest) {
   const username = body?.username?.trim() || "";
   const password = body?.password || "";
 
-  if (!verifyDashboardCredentials(username, password)) {
+  const role = verifyDashboardCredentials(username, password);
+
+  if (!role) {
     return NextResponse.json(
       { message: "Invalid username or password.", success: false },
       { status: 401 }
     );
   }
 
-  const response = NextResponse.json({ success: true });
-  setDashboardAuthCookie(response);
+  const response = NextResponse.json({ role, success: true });
+  setDashboardAuthCookie(response, role);
 
   return response;
 }

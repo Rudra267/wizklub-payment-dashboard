@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isDashboardAuthenticated, unauthorizedDashboardResponse } from "../../auth-utils";
+import { hasDashboardRole, unauthorizedDashboardResponse } from "../../auth-utils";
 
 function readSuccess(payload: unknown) {
   if (!payload || typeof payload !== "object") {
@@ -55,7 +55,7 @@ function readMessage(payload: unknown, fallback: string) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isDashboardAuthenticated(request)) {
+  if (!hasDashboardRole(request, ["admin", "wizklub"])) {
     return unauthorizedDashboardResponse();
   }
 

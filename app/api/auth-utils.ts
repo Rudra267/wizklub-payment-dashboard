@@ -4,6 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
 const AUTH_COOKIE_NAME = "wizklub_dashboard_auth";
 const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 30;
 
+export type DashboardRole = "admin" | "uniform" | "wizklub";
+
+type DashboardCredentials = {
+  password: string;
+  role: DashboardRole;
+  username: string;
+};
+
 function safeCompare(left: string, right: string) {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
@@ -15,50 +23,92 @@ function safeCompare(left: string, right: string) {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function readConfiguredCredentials() {
-  return {
-    password: process.env.DASHBOARD_PASSWORD || "",
-    username: process.env.DASHBOARD_USERNAME || ""
-  };
+function readConfiguredCredentials(): DashboardCredentials[] {
+  const credentials: DashboardCredentials[] = [
+    {
+      password: process.env.DASHBOARD_PASSWORD || process.env.ADMIN_PASSWORD || "",
+      role: "admin",
+      username: process.env.DASHBOARD_USERNAME || process.env.ADMIN_USERNAME || ""
+    },
+    {
+      password: process.env.WIZKLUB_PASSWORD || "",
+      role: "wizklub",
+      username: process.env.WIZKLUB_USERNAME || ""
+    },
+    {
+      password: process.env.UNIFORM_PASSWORD || "",
+      role: "uniform",
+      username: process.env.UNIFORM_USERNAME || ""
+    }
+  ];
+
+  return credentials.filter((item) => item.username && item.password);
 }
 
-function createAuthToken() {
-  const { password, username } = readConfiguredCredentials();
+function getCredentialsForRole(role: DashboardRole) {
+  return readConfiguredCredentials().find((credentials) => credentials.role === role);
+}
 
-  if (!password || !username) {
+function createAuthSignature(role: DashboardRole) {
+  const credentials = getCredentialsForRole(role);
+
+  if (!credentials) {
     return "";
   }
 
-  return createHmac("sha256", password)
-    .update(`${username}:wizklub-payment-dashboard`)
+  return createHmac("sha256", credentials.password)
+    .update(`${credentials.username}:${role}:wizklub-payment-dashboard`)
     .digest("hex");
 }
 
 export function verifyDashboardCredentials(username: string, password: string) {
-  const credentials = readConfiguredCredentials();
+  const normalizedUsername = username.trim();
 
-  if (!credentials.username || !credentials.password) {
-    return false;
+  for (const credentials of readConfiguredCredentials()) {
+    if (
+      safeCompare(normalizedUsername, credentials.username) &&
+      safeCompare(password, credentials.password)
+    ) {
+      return credentials.role;
+    }
   }
 
-  return (
-    safeCompare(username, credentials.username) &&
-    safeCompare(password, credentials.password)
-  );
+  return null;
+}
+
+export function getDashboardSession(request: NextRequest) {
+  const providedToken = request.cookies.get(AUTH_COOKIE_NAME)?.value || "";
+  const [providedRole, signature] = providedToken.split(".");
+
+  if (
+    providedRole !== "admin" &&
+    providedRole !== "uniform" &&
+    providedRole !== "wizklub"
+  ) {
+    return null;
+  }
+
+  const role: DashboardRole = providedRole;
+  const expectedSignature = createAuthSignature(role);
+
+  if (!expectedSignature || !signature) {
+    return null;
+  }
+
+  return safeCompare(signature, expectedSignature) ? { role } : null;
 }
 
 export function isDashboardAuthenticated(request: NextRequest) {
-  const expectedToken = createAuthToken();
-  const providedToken = request.cookies.get(AUTH_COOKIE_NAME)?.value || "";
-
-  if (!expectedToken || !providedToken) {
-    return false;
-  }
-
-  return safeCompare(providedToken, expectedToken);
+  return Boolean(getDashboardSession(request));
 }
 
-export function setDashboardAuthCookie(response: NextResponse) {
+export function hasDashboardRole(request: NextRequest, allowedRoles: DashboardRole[]) {
+  const session = getDashboardSession(request);
+
+  return Boolean(session && allowedRoles.includes(session.role));
+}
+
+export function setDashboardAuthCookie(response: NextResponse, role: DashboardRole) {
   response.cookies.set({
     httpOnly: true,
     maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
@@ -66,7 +116,7 @@ export function setDashboardAuthCookie(response: NextResponse) {
     path: "/",
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    value: createAuthToken()
+    value: `${role}.${createAuthSignature(role)}`
   });
 }
 

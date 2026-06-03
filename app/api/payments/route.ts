@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isDashboardAuthenticated, unauthorizedDashboardResponse } from "../auth-utils";
+import { hasDashboardRole, unauthorizedDashboardResponse } from "../auth-utils";
 
 type PaymentRecord = {
   addedOn: string;
@@ -98,7 +98,7 @@ function extractPayments(payload: unknown): PaymentRecord[] {
 }
 
 export async function GET(request: NextRequest) {
-  if (!isDashboardAuthenticated(request)) {
+  if (!hasDashboardRole(request, ["admin", "wizklub"])) {
     return unauthorizedDashboardResponse();
   }
 

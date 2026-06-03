@@ -1,18 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ElementType, FormEvent, ReactNode } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BadgeCheck,
   BarChart3,
+  Calendar,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   CreditCard,
+  Download,
   FileText,
   GraduationCap,
   IndianRupee,
+  Info,
   Landmark,
   LayoutDashboard,
   Loader2,
@@ -37,6 +42,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import logoImage from "./assets/logo.png";
+import receiptDashboardImage from "./assets/recipt-dash.png";
 
 type Payment = {
   addedOn: string;
@@ -49,6 +55,8 @@ type Payment = {
 type LookupState = "idle" | "loading" | "success" | "error";
 type VerifyState = "idle" | "loading" | "success" | "error";
 type AuthState = "checking" | "loggedIn" | "loggedOut";
+type ActiveView = "Wizklub Payments" | "Uniform Receipts";
+type DashboardRole = "admin" | "uniform" | "wizklub";
 
 type StatCard = {
   accent: string;
@@ -61,8 +69,9 @@ type StatCard = {
 };
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard" },
+  { icon: LayoutDashboard, label: "Wizklub Payments" },
   { icon: CreditCard, label: "Payments" },
+  { icon: FileText, label: "Uniform Receipts" },
   { icon: RefreshCcw, label: "Transactions" },
   { icon: BadgeCheck, label: "Refunds" },
   { icon: Landmark, label: "Settlements" },
@@ -70,6 +79,26 @@ const navItems = [
   { icon: GraduationCap, label: "Students" },
   { icon: Settings, label: "Settings" }
 ];
+
+function canAccessView(role: DashboardRole | null, label: string) {
+  if (role === "admin") {
+    return label === "Wizklub Payments" || label === "Uniform Receipts";
+  }
+
+  if (role === "wizklub") {
+    return label === "Wizklub Payments";
+  }
+
+  if (role === "uniform") {
+    return label === "Uniform Receipts";
+  }
+
+  return false;
+}
+
+function getDefaultViewForRole(role: DashboardRole | null): ActiveView {
+  return role === "uniform" ? "Uniform Receipts" : "Wizklub Payments";
+}
 
 const chartBase = [
   { value: 2 },
@@ -266,6 +295,14 @@ function displayValue(value: number | string) {
   return text || "Not available";
 }
 
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function MiniTooltip({
   active,
   payload
@@ -420,7 +457,15 @@ function LogoMark() {
   );
 }
 
-function Sidebar() {
+function Sidebar({
+  activeView,
+  onViewChange,
+  role
+}: {
+  activeView: ActiveView;
+  onViewChange: (view: ActiveView) => void;
+  role: DashboardRole | null;
+}) {
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-[280px] overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#02111D] via-[#021725] to-[#041E33] p-4 text-white shadow-[24px_0_70px_rgba(0,0,0,.34)] xl:flex xl:flex-col">
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -429,23 +474,32 @@ function Sidebar() {
         </div>
 
         <nav className="mt-8 grid gap-2">
-          {navItems.map((item, index) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = index === 0;
+            const isEnabled = canAccessView(role, item.label);
+            const isActive = item.label === activeView;
 
             return (
               <button
-                aria-disabled={!isActive}
+                aria-disabled={!isEnabled}
                 className={cn(
                   "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200",
                   isActive &&
                     "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)] hover:scale-[1.015] hover:bg-[#00E7B0]/14",
-                  !isActive &&
+                  isEnabled &&
+                    !isActive &&
+                    "text-[#AFC0D9] hover:scale-[1.015] hover:bg-white/[.04] hover:text-white",
+                  !isEnabled &&
                     "cursor-not-allowed text-[#60708A] opacity-50"
                 )}
-                disabled={!isActive}
+                disabled={!isEnabled}
                 key={item.label}
-                tabIndex={isActive ? 0 : -1}
+                onClick={() => {
+                  if (isEnabled) {
+                    onViewChange(item.label as ActiveView);
+                  }
+                }}
+                tabIndex={isEnabled ? 0 : -1}
                 type="button"
               >
                 <Icon
@@ -524,11 +578,17 @@ function MobileHeader({ onMenuOpen }: { onMenuOpen: () => void }) {
 }
 
 function MobileSidebar({
+  activeView,
   isOpen,
-  onClose
+  onClose,
+  onViewChange,
+  role
 }: {
+  activeView: ActiveView;
   isOpen: boolean;
   onClose: () => void;
+  onViewChange: (view: ActiveView) => void;
+  role: DashboardRole | null;
 }) {
   return (
     <AnimatePresence>
@@ -566,23 +626,32 @@ function MobileSidebar({
               </div>
 
               <nav className="mt-8 grid gap-2">
-                {navItems.map((item, index) => {
+                {navItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = index === 0;
+                  const isEnabled = canAccessView(role, item.label);
+                  const isActive = item.label === activeView;
 
                   return (
                     <button
-                      aria-disabled={!isActive}
+                      aria-disabled={!isEnabled}
                       className={cn(
                         "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200",
                         isActive &&
                           "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)]",
-                        !isActive && "cursor-not-allowed text-[#60708A] opacity-50"
+                        isEnabled &&
+                          !isActive &&
+                          "text-[#AFC0D9] hover:bg-white/[.04] hover:text-white",
+                        !isEnabled && "cursor-not-allowed text-[#60708A] opacity-50"
                       )}
-                      disabled={!isActive}
+                      disabled={!isEnabled}
                       key={item.label}
-                      onClick={isActive ? onClose : undefined}
-                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => {
+                        if (isEnabled) {
+                          onViewChange(item.label as ActiveView);
+                          onClose();
+                        }
+                      }}
+                      tabIndex={isEnabled ? 0 : -1}
                       type="button"
                     >
                       <Icon className="h-5 w-5" />
@@ -932,8 +1001,350 @@ function PaymentRecords({
   );
 }
 
+function UniformReceiptsView() {
+  const [receiptDate, setReceiptDate] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [downloadState, setDownloadState] = useState<LookupState>("idle");
+  const [downloadMessage, setDownloadMessage] = useState("");
+  const receiptDateInputRef = useRef<HTMLInputElement>(null);
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const previousMonthDays = new Date(year, month, 0).getDate();
+    const leadingDays = firstDay.getDay();
+
+    return Array.from({ length: 42 }, (_, index) => {
+      const dayNumber = index - leadingDays + 1;
+      const date =
+        dayNumber < 1
+          ? new Date(year, month - 1, previousMonthDays + dayNumber)
+          : dayNumber > daysInMonth
+            ? new Date(year, month + 1, dayNumber - daysInMonth)
+            : new Date(year, month, dayNumber);
+
+      return {
+        date,
+        isCurrentMonth: date.getMonth() === month,
+        value: toDateInputValue(date)
+      };
+    });
+  }, [calendarMonth]);
+
+  const selectedDateLabel = receiptDate
+    ? new Date(`${receiptDate}T00:00:00`).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      })
+    : "";
+  const calendarMonthLabel = calendarMonth.toLocaleDateString("en-IN", {
+    month: "long",
+    year: "numeric"
+  });
+
+  async function handleUniformReceiptDownload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!receiptDate) {
+      setDownloadState("error");
+      setDownloadMessage("Please select a receipt date.");
+      return;
+    }
+
+    setDownloadState("loading");
+    setDownloadMessage("Preparing receipt ZIP. This may take a few minutes.");
+
+    try {
+      const response = await fetch(
+        `/api/uniform-receipts?date=${encodeURIComponent(receiptDate)}`
+      );
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(
+          result && typeof result.message === "string"
+            ? result.message
+            : "Unable to download uniform receipts."
+        );
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("content-disposition") || "";
+      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+      const fileName = fileNameMatch?.[1] || `uniform-receipts-${receiptDate}.zip`;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = objectUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+
+      setDownloadState("success");
+      setDownloadMessage("Receipt ZIP download started.");
+    } catch (error) {
+      setDownloadState("error");
+      setDownloadMessage(
+        error instanceof Error ? error.message : "Unable to download uniform receipts."
+      );
+    }
+  }
+
+  return (
+    <div className="mt-8 grid gap-4">
+      <motion.section
+        animate={{ opacity: 1, y: 0 }}
+        className="relative min-w-0 overflow-visible rounded-[14px] border border-[#00E7B0]/72 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.62))] px-5 py-7 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_20px_60px_rgba(0,0,0,.34),0_0_28px_rgba(0,231,176,.10)] sm:px-8 lg:px-10"
+        initial={{ opacity: 0, y: 18 }}
+        transition={{ duration: 0.42, ease: "easeOut" }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_11%_18%,rgba(0,231,176,.14),transparent_28%),radial-gradient(circle_at_80%_38%,rgba(77,111,255,.10),transparent_34%)]" />
+        <div className="relative z-10 grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(380px,560px)]">
+          <div className="min-w-0">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+              <div className="grid h-20 w-20 shrink-0 place-items-center rounded-full border border-[#00E7B0]/24 bg-[#00E7B0]/14 text-[#BFFCEF] shadow-[0_0_34px_rgba(0,231,176,.32),inset_0_1px_0_rgba(255,255,255,.08)] sm:h-[82px] sm:w-[82px]">
+                <FileText className="h-10 w-10" strokeWidth={2.1} />
+              </div>
+              <div className="min-w-0 pt-1">
+                <h2 className="text-[24px] font-bold leading-tight text-white md:text-[26px]">
+                  Download Uniform Receipts
+                </h2>
+                <p className="mt-3 max-w-lg text-[15px] leading-7 text-[#C4D1E8]">
+                  Choose a date to download all receipts of successful uniform payments.
+                </p>
+              </div>
+            </div>
+
+            <div className="my-7 h-px w-full bg-[#31425E]/80" />
+
+            <form
+              className="grid max-w-[490px] gap-5"
+              onSubmit={handleUniformReceiptDownload}
+            >
+              <label
+                className={cn(
+                  "grid gap-3 text-[15px] font-semibold text-white transition-[margin] duration-200",
+                  isCalendarOpen && "mb-[398px]"
+                )}
+                htmlFor="receiptDate"
+              >
+                Receipt Date
+                <div className="relative">
+                  <Input
+                    className="h-[54px] cursor-pointer rounded-[8px] border-[#34445E] bg-[#061226]/80 pl-5 pr-14 text-[15px] text-[#C4D1E8] focus:border-[#4D6FFF]/65 focus:shadow-[0_0_0_4px_rgba(77,111,255,.14),0_0_30px_rgba(77,111,255,.14)]"
+                    id="receiptDate"
+                    onClick={() => setIsCalendarOpen(true)}
+                    onFocus={() => setIsCalendarOpen(true)}
+                    placeholder="Select Receipt Date"
+                    readOnly
+                    ref={receiptDateInputRef}
+                    value={selectedDateLabel}
+                  />
+                  <button
+                    aria-label="Open receipt date picker"
+                    className="absolute right-4 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-[6px] text-white transition hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4D6FFF]/70"
+                    onClick={() => {
+                      setIsCalendarOpen((current) => !current);
+                      receiptDateInputRef.current?.focus();
+                    }}
+                    type="button"
+                  >
+                    <Calendar className="h-5 w-5" />
+                  </button>
+                  {isCalendarOpen ? (
+                    <div className="absolute left-0 top-[calc(100%+12px)] z-50 w-[310px] max-w-full rounded-[12px] border border-[#00E7B0]/24 bg-[#061226] p-4 shadow-[0_24px_60px_rgba(0,0,0,.55),0_0_34px_rgba(0,231,176,.12)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[14px] font-semibold text-white">
+                          {calendarMonthLabel}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            aria-label="Previous month"
+                            className="grid h-8 w-8 place-items-center rounded-[7px] border border-white/10 bg-white/[.04] text-[#C4D1E8] transition hover:border-[#00E7B0]/35 hover:text-white"
+                            onClick={() =>
+                              setCalendarMonth(
+                                new Date(
+                                  calendarMonth.getFullYear(),
+                                  calendarMonth.getMonth() - 1,
+                                  1
+                                )
+                              )
+                            }
+                            type="button"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            aria-label="Next month"
+                            className="grid h-8 w-8 place-items-center rounded-[7px] border border-white/10 bg-white/[.04] text-[#C4D1E8] transition hover:border-[#00E7B0]/35 hover:text-white"
+                            onClick={() =>
+                              setCalendarMonth(
+                                new Date(
+                                  calendarMonth.getFullYear(),
+                                  calendarMonth.getMonth() + 1,
+                                  1
+                                )
+                              )
+                            }
+                            type="button"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-[#8CA3C7]">
+                        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
+                          <span className="py-1" key={day}>
+                            {day}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-1 grid grid-cols-7 gap-1">
+                        {calendarDays.map((day) => {
+                          const isSelected = day.value === receiptDate;
+                          const isToday = day.value === toDateInputValue(new Date());
+
+                          return (
+                            <button
+                              className={cn(
+                                "grid h-9 place-items-center rounded-[7px] text-[13px] font-semibold transition",
+                                day.isCurrentMonth
+                                  ? "text-white hover:bg-[#00E7B0]/14"
+                                  : "text-[#60708A]",
+                                isToday &&
+                                  "border border-[#00E7B0]/35 text-[#00E7B0]",
+                                isSelected &&
+                                  "border border-[#00E7B0] bg-[#00E7B0] text-[#02111D] shadow-[0_0_24px_rgba(0,231,176,.32)] hover:bg-[#00E7B0]"
+                              )}
+                              key={day.value}
+                              onClick={() => {
+                                setReceiptDate(day.value);
+                                setCalendarMonth(
+                                  new Date(day.date.getFullYear(), day.date.getMonth(), 1)
+                                );
+                                setIsCalendarOpen(false);
+                              }}
+                              type="button"
+                            >
+                              {day.date.getDate()}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-4 flex justify-between border-t border-white/10 pt-3">
+                        <button
+                          className="text-[12px] font-semibold text-[#8CA3C7] transition hover:text-white"
+                          onClick={() => {
+                            setReceiptDate("");
+                            receiptDateInputRef.current?.focus();
+                          }}
+                          type="button"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          className="text-[12px] font-semibold text-[#00E7B0] transition hover:text-white"
+                          onClick={() => {
+                            const today = new Date();
+                            setReceiptDate(toDateInputValue(today));
+                            setCalendarMonth(
+                              new Date(today.getFullYear(), today.getMonth(), 1)
+                            );
+                            setIsCalendarOpen(false);
+                          }}
+                          type="button"
+                        >
+                          Today
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </label>
+
+              <Button
+                className="h-[58px] w-full rounded-[8px] text-[16px]"
+                disabled={downloadState === "loading"}
+                type="submit"
+              >
+                {downloadState === "loading" ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Download className="h-5 w-5" />
+                )}
+                Download All Receipts
+              </Button>
+            </form>
+
+            {downloadMessage ? (
+              <div
+                className={cn(
+                  "mt-5 max-w-[490px] rounded-[8px] border px-4 py-3 text-sm font-semibold",
+                  downloadState === "loading" &&
+                    "border-[#4D6FFF]/25 bg-[#4D6FFF]/10 text-[#AFC0FF]",
+                  downloadState === "success" &&
+                    "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]",
+                  downloadState === "error" &&
+                    "border-[#FF4D6D]/25 bg-[#FF4D6D]/10 text-[#FF4D6D]"
+                )}
+              >
+                {downloadMessage}
+              </div>
+            ) : null}
+
+            <div className="mt-8 flex items-center gap-3 text-[14px] text-[#C4D1E8]">
+              <ShieldCheck className="h-5 w-5 shrink-0 text-[#00E7B0]" strokeWidth={2.3} />
+              <span>All receipts will be downloaded in a single ZIP file.</span>
+            </div>
+          </div>
+
+          <div className="relative mx-auto w-full max-w-[580px]">
+            <Image
+              alt="Uniform receipt download illustration"
+              className="h-auto w-full object-contain drop-shadow-[0_30px_55px_rgba(0,0,0,.42)]"
+              placeholder="blur"
+              priority
+              sizes="(max-width: 1024px) 92vw, 560px"
+              src={receiptDashboardImage}
+            />
+          </div>
+        </div>
+      </motion.section>
+
+      <motion.section
+        animate={{ opacity: 1, y: 0 }}
+        className="flex min-w-0 gap-5 rounded-[14px] border border-[#315EFF]/52 bg-[linear-gradient(145deg,rgba(14,31,79,.72),rgba(4,14,30,.64))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.28),0_0_28px_rgba(77,111,255,.10)] sm:p-7"
+        initial={{ opacity: 0, y: 18 }}
+        transition={{ delay: 0.08, duration: 0.42, ease: "easeOut" }}
+      >
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#315EFF] text-white shadow-[0_0_30px_rgba(77,111,255,.34)] sm:h-11 sm:w-11">
+          <Info className="h-5 w-5" strokeWidth={2.8} />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-[16px] font-semibold text-white">Important Note</h3>
+          <p className="mt-3 text-[13px] leading-6 text-[#D3DCF1]">
+            Receipts will be downloaded based on successful uniform payments for the
+            selected date.
+          </p>
+          <p className="mt-1 text-[13px] leading-6 text-[#D3DCF1]">
+            Make sure the date is correct before starting the download.
+          </p>
+        </div>
+      </motion.section>
+    </div>
+  );
+}
+
 export default function Home() {
   const [authState, setAuthState] = useState<AuthState>("checking");
+  const [dashboardRole, setDashboardRole] = useState<DashboardRole | null>(null);
+  const [activeView, setActiveView] = useState<ActiveView>("Wizklub Payments");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginState, setLoginState] = useState<LookupState>("idle");
@@ -956,8 +1367,16 @@ export default function Home() {
         });
         const result = await response.json();
 
-        setAuthState(result.authenticated ? "loggedIn" : "loggedOut");
+        const role =
+          result.role === "admin" || result.role === "uniform" || result.role === "wizklub"
+            ? result.role
+            : null;
+
+        setDashboardRole(role);
+        setActiveView(getDefaultViewForRole(role));
+        setAuthState(result.authenticated && role ? "loggedIn" : "loggedOut");
       } catch {
+        setDashboardRole(null);
         setAuthState("loggedOut");
       }
     }
@@ -1037,6 +1456,16 @@ export default function Home() {
       value: formatAmount(summary.totalAmount)
     }
   ];
+  const isUniformReceiptsView = activeView === "Uniform Receipts";
+  const pageTitle = isUniformReceiptsView
+    ? "Uniform Recipt"
+    : "Payment Dashboard";
+  const pageDescription = isUniformReceiptsView
+    ? "Select a date and download all uniform receipts in one ZIP file."
+    : "Search, view and verify all payment transactions in one place.";
+  const pageEyebrow = isUniformReceiptsView
+    ? "UNIFORM PAYMENT RECIPTS"
+    : "WIZKLUB PAYMENTS";
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1068,7 +1497,18 @@ export default function Home() {
         throw new Error(result.message || "Invalid username or password.");
       }
 
+      const role =
+        result.role === "admin" || result.role === "uniform" || result.role === "wizklub"
+          ? result.role
+          : null;
+
+      if (!role) {
+        throw new Error("Login role is not configured.");
+      }
+
       await waitForMinimumDuration(loginStartedAt, 2500);
+      setDashboardRole(role);
+      setActiveView(getDefaultViewForRole(role));
       setAuthState("loggedIn");
       setLoginState("idle");
       setLoginMessage("");
@@ -1085,6 +1525,8 @@ export default function Home() {
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     setAuthState("loggedOut");
+    setDashboardRole(null);
+    setActiveView("Wizklub Payments");
     setPayments([]);
     setLookupState("idle");
     setLookupMessage("");
@@ -1278,10 +1720,17 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#020817] font-sans text-white">
-      <Sidebar />
+      <Sidebar
+        activeView={activeView}
+        onViewChange={setActiveView}
+        role={dashboardRole}
+      />
       <MobileSidebar
+        activeView={activeView}
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
+        onViewChange={setActiveView}
+        role={dashboardRole}
       />
       <section className="relative min-h-screen px-3 pb-5 pt-[112px] sm:px-6 lg:px-8 xl:ml-[280px] xl:px-10 xl:py-8">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_3%,rgba(0,231,176,.10),transparent_24%),radial-gradient(circle_at_80%_4%,rgba(77,111,255,.08),transparent_24%)]" />
@@ -1291,13 +1740,13 @@ export default function Home() {
         <header className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#00E7B0]">
-              WIZKLUB PAYMENTS
+              {pageEyebrow}
             </p>
             <h1 className="mt-3 text-[34px] font-bold leading-tight text-white md:text-[38px]">
-              Payment Dashboard
+              {pageTitle}
             </h1>
             <p className="mt-4 max-w-3xl text-[15px] leading-7 text-[#8CA3C7]">
-              Search, view and verify all payment transactions in one place.
+              {pageDescription}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -1311,11 +1760,15 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="mt-8 grid gap-5 sm:grid-cols-2 2xl:grid-cols-4">
-          {stats.map((stat, index) => (
-            <StatCardView index={index} key={stat.label} stat={stat} />
-          ))}
-        </section>
+        {isUniformReceiptsView ? (
+          <UniformReceiptsView />
+        ) : (
+          <>
+            <section className="mt-8 grid gap-5 sm:grid-cols-2 2xl:grid-cols-4">
+              {stats.map((stat, index) => (
+                <StatCardView index={index} key={stat.label} stat={stat} />
+              ))}
+            </section>
 
         <section className="mt-8 grid min-w-0 gap-7 lg:grid-cols-[minmax(0,1.6fr)_minmax(360px,.94fr)]">
           <div className="grid min-w-0 gap-7">
@@ -1505,6 +1958,8 @@ export default function Home() {
             </motion.div>
           </aside>
         </section>
+          </>
+        )}
 
         <footer className="mt-8 flex flex-col gap-3 rounded-[14px] border border-[#00E7B0]/12 bg-[rgba(6,18,38,.72)] px-5 py-4 text-sm text-[#8CA3C7] shadow-[0_20px_60px_rgba(0,0,0,.28)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">

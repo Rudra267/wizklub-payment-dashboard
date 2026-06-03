@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isDashboardAuthenticated } from "../../auth-utils";
+import { getDashboardSession } from "../../auth-utils";
 
 export async function GET(request: NextRequest) {
-  return NextResponse.json({ authenticated: isDashboardAuthenticated(request) });
+  const session = getDashboardSession(request);
+
+  return NextResponse.json({
+    authenticated: Boolean(session),
+    role: session?.role || null
+  });
 }
