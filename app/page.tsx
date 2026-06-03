@@ -82,7 +82,7 @@ const navItems = [
 
 function canAccessView(role: DashboardRole | null, label: string) {
   if (role === "admin") {
-    return label === "Wizklub Payments" || label === "Uniform Receipts";
+    return label === "Wizklub Payments";
   }
 
   if (role === "wizklub") {
