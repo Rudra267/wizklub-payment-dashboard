@@ -25,8 +25,12 @@ function readSuccess(payload: unknown) {
     return objectPayload.verified;
   }
 
+  if (typeof objectPayload.status === "boolean") {
+    return objectPayload.status;
+  }
+
   if (typeof objectPayload.status === "string") {
-    return ["success", "successful", "verified", "paid"].includes(
+    return ["success", "successful", "verified", "paid", "captured"].includes(
       objectPayload.status.toLowerCase()
     );
   }
@@ -54,12 +58,50 @@ function readMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
+async function callTransactionApi(
+  apiUrl: string,
+  transactionId: string,
+  successFallback: string,
+  failureFallback: string
+) {
+  const url = new URL(apiUrl);
+  url.searchParams.set("transaction_id", transactionId);
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json, text/plain, */*"
+    },
+    method: "GET"
+  });
+
+  if (!isJsonResponse(response)) {
+    const text = await response.text();
+    const success = response.ok && readTextSuccess(text);
+
+    return {
+      message: success ? successFallback : failureFallback,
+      responseStatus: response.status,
+      success
+    };
+  }
+
+  const payload = await response.json();
+  const success = response.ok && readSuccess(payload);
+
+  return {
+    message: readMessage(payload, success ? successFallback : failureFallback),
+    responseStatus: response.status,
+    success
+  };
+}
+
 export async function POST(request: NextRequest) {
   if (!hasDashboardRole(request, ["admin", "wizklub"])) {
     return unauthorizedDashboardResponse();
   }
 
   const body = (await request.json().catch(() => null)) as {
+    skipStatusCheck?: boolean;
     transactionId?: string;
   } | null;
   const matchedTransactionIds = getSingleTransactionId(body?.transactionId || "");
@@ -82,51 +124,44 @@ export async function POST(request: NextRequest) {
   }
 
   const transactionId = matchedTransactionIds[0] as string;
+  const statusCheckUrl =
+    process.env.TRANSACTION_STATUS_API_URL ||
+    "https://api.srichaitanyaschool.net/v3/grievance-api/check-razorpay-book-payment-status";
   const verifyUrl = process.env.TRANSACTION_VERIFY_API_URL;
   const defaultVerifyUrl =
     "https://srichaitanyaschool.net/book-kits-payments/check-book-sales-payment-razorpay";
 
   if (!verifyUrl) {
-    const razorpayUrl = new URL(defaultVerifyUrl);
-    razorpayUrl.searchParams.set("transaction_id", transactionId);
-
     try {
-      const response = await fetch(razorpayUrl, {
-        headers: {
-          Accept: "application/json, text/plain, */*"
-        },
-        method: "GET"
-      });
-
-      if (isJsonResponse(response)) {
-        const payload = await response.json();
-        const success = response.ok && readSuccess(payload);
-
-        return NextResponse.json(
-          {
-            message: readMessage(
-              payload,
-              success
-                ? "Receipt generated. Reach out site for download receipt."
-                : "Transaction verification failed."
-            ),
-            success
-          },
-          { status: success ? 200 : 400 }
+      if (!body?.skipStatusCheck) {
+        const statusCheck = await callTransactionApi(
+          statusCheckUrl,
+          transactionId,
+          "Payment transaction is successful.",
+          "Payment transaction is not successful."
         );
+
+        if (!statusCheck.success) {
+          return NextResponse.json(
+            { message: statusCheck.message, success: false },
+            { status: statusCheck.responseStatus >= 400 ? statusCheck.responseStatus : 400 }
+          );
+        }
       }
 
-      const text = await response.text();
-      const success = response.ok && readTextSuccess(text);
+      const receiptGeneration = await callTransactionApi(
+        defaultVerifyUrl,
+        transactionId,
+        "Receipt generated. Reach out site for download receipt.",
+        "Transaction verification failed."
+      );
 
       return NextResponse.json(
         {
-          message: success
-            ? "Receipt generated. Reach out site for download receipt."
-            : "Transaction verification failed.",
-          success
+          message: receiptGeneration.message,
+          success: receiptGeneration.success
         },
-        { status: success ? 200 : 400 }
+        { status: receiptGeneration.success ? 200 : 400 }
       );
     } catch {
       return NextResponse.json(
@@ -151,45 +186,35 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const url = new URL(verifyUrl || defaultVerifyUrl);
-    url.searchParams.set("transaction_id", transactionId);
-
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json, text/plain, */*"
-      },
-      method: "GET"
-    });
-
-    if (!isJsonResponse(response)) {
-      const text = await response.text();
-      const success = response.ok && readTextSuccess(text);
-
-      return NextResponse.json(
-        {
-          message: success
-            ? "Receipt generated. Reach out site for download receipt."
-            : "Transaction verification failed.",
-          success
-        },
-        { status: success ? 200 : 400 }
+    if (!body?.skipStatusCheck) {
+      const statusCheck = await callTransactionApi(
+        statusCheckUrl,
+        transactionId,
+        "Payment transaction is successful.",
+        "Payment transaction is not successful."
       );
+
+      if (!statusCheck.success) {
+        return NextResponse.json(
+          { message: statusCheck.message, success: false },
+          { status: statusCheck.responseStatus >= 400 ? statusCheck.responseStatus : 400 }
+        );
+      }
     }
 
-    const payload = await response.json();
-    const success = response.ok && readSuccess(payload);
+    const receiptGeneration = await callTransactionApi(
+      verifyUrl || defaultVerifyUrl,
+      transactionId,
+      "Receipt generated. Reach out site for download receipt.",
+      "Transaction verification failed."
+    );
 
     return NextResponse.json(
       {
-        message: readMessage(
-          payload,
-          success
-            ? "Receipt generated. Reach out site for download receipt."
-            : "Transaction verification failed."
-        ),
-        success
+        message: receiptGeneration.message,
+        success: receiptGeneration.success
       },
-      { status: success ? 200 : 400 }
+      { status: receiptGeneration.success ? 200 : 400 }
     );
   } catch {
     return NextResponse.json(

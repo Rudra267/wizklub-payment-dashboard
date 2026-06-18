@@ -54,6 +54,7 @@ type Payment = {
 
 type LookupState = "idle" | "loading" | "success" | "error";
 type VerifyState = "idle" | "loading" | "success" | "error";
+type VerifyStepState = "idle" | "loading" | "success" | "error";
 type AuthState = "checking" | "loggedIn" | "loggedOut";
 type ActiveView = "Wizklub Payments" | "Uniform Receipts";
 type DashboardRole = "admin" | "uniform" | "wizklub";
@@ -1353,9 +1354,18 @@ export default function Home() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [lookupState, setLookupState] = useState<LookupState>("idle");
   const [lookupMessage, setLookupMessage] = useState("");
+  const [studentSyncState, setStudentSyncState] = useState<LookupState>("idle");
+  const [studentSyncMessage, setStudentSyncMessage] = useState("");
   const [transactionId, setTransactionId] = useState("");
   const [verifyState, setVerifyState] = useState<VerifyState>("idle");
   const [verifyMessage, setVerifyMessage] = useState("");
+  const [verifySteps, setVerifySteps] = useState<{
+    receipt: VerifyStepState;
+    status: VerifyStepState;
+  }>({
+    receipt: "idle",
+    status: "idle"
+  });
   const [copiedTransactionId, setCopiedTransactionId] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -1466,6 +1476,29 @@ export default function Home() {
   const pageEyebrow = isUniformReceiptsView
     ? "UNIFORM PAYMENT RECIPTS"
     : "WIZKLUB PAYMENTS";
+  const verifyStepItems = [
+    {
+      description:
+        verifySteps.status === "success"
+          ? "Payment status check completed."
+          : verifySteps.status === "error"
+            ? "Payment status check failed."
+            : "Checking transaction payment status.",
+      label: "Checking payment status",
+      state: verifySteps.status
+    },
+    {
+      description:
+        verifySteps.receipt === "success"
+          ? "Receipt generation completed."
+          : verifySteps.receipt === "error"
+            ? "Receipt generation failed."
+            : "Generating receipt after successful payment check.",
+      label: "Generating receipt",
+      state: verifySteps.receipt
+    }
+  ];
+  const showVerifySteps = verifyStepItems.some((item) => item.state !== "idle");
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1530,8 +1563,11 @@ export default function Home() {
     setPayments([]);
     setLookupState("idle");
     setLookupMessage("");
+    setStudentSyncState("idle");
+    setStudentSyncMessage("");
     setVerifyState("idle");
     setVerifyMessage("");
+    setVerifySteps({ receipt: "idle", status: "idle" });
   }
 
   async function handleLookup(event: FormEvent<HTMLFormElement>) {
@@ -1578,30 +1614,21 @@ export default function Home() {
     }
   }
 
-  async function handleVerify(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const matchedTransactionIds = getSingleTransactionId(transactionId);
+  async function handleStudentSync() {
+    const trimmedAdmissionNo = admissionNo.trim();
 
-    if (!transactionId.trim() || matchedTransactionIds.length === 0) {
-      setVerifyState("error");
-      setVerifyMessage("Please enter one ORDS-KIT transaction ID.");
+    if (!trimmedAdmissionNo) {
+      setStudentSyncState("error");
+      setStudentSyncMessage("Please enter an admission number.");
       return;
     }
 
-    if (matchedTransactionIds.length > 1) {
-      setVerifyState("error");
-      setVerifyMessage("Please verify only one ORDS-KIT transaction ID at a time.");
-      return;
-    }
-
-    const verifiedTransactionId = matchedTransactionIds[0] as string;
-    setTransactionId(verifiedTransactionId);
-    setVerifyState("loading");
-    setVerifyMessage("");
+    setStudentSyncState("loading");
+    setStudentSyncMessage("Syncing student details. Please wait.");
 
     try {
-      const response = await fetch("/api/transaction/verify", {
-        body: JSON.stringify({ transactionId: verifiedTransactionId }),
+      const response = await fetch("/api/student/sync", {
+        body: JSON.stringify({ admissionNo: trimmedAdmissionNo }),
         headers: {
           "Content-Type": "application/json"
         },
@@ -1610,15 +1637,89 @@ export default function Home() {
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.message || "Transaction verification failed.");
+        throw new Error(result.message || "Student sync failed.");
+      }
+
+      setStudentSyncState("success");
+      setStudentSyncMessage(result.message || "Student synced successfully.");
+    } catch (error) {
+      setStudentSyncState("error");
+      setStudentSyncMessage(
+        error instanceof Error ? error.message : "Student sync failed."
+      );
+    }
+  }
+
+  async function handleVerify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const matchedTransactionIds = getSingleTransactionId(transactionId);
+
+    if (!transactionId.trim() || matchedTransactionIds.length === 0) {
+      setVerifyState("error");
+      setVerifyMessage("Please enter one ORDS-KIT transaction ID.");
+      setVerifySteps({ receipt: "idle", status: "idle" });
+      return;
+    }
+
+    if (matchedTransactionIds.length > 1) {
+      setVerifyState("error");
+      setVerifyMessage("Please verify only one ORDS-KIT transaction ID at a time.");
+      setVerifySteps({ receipt: "idle", status: "idle" });
+      return;
+    }
+
+    const verifiedTransactionId = matchedTransactionIds[0] as string;
+    setTransactionId(verifiedTransactionId);
+    setVerifyState("loading");
+    setVerifyMessage("Checking payment status.");
+    setVerifySteps({ receipt: "idle", status: "loading" });
+
+    try {
+      const statusResponse = await fetch("/api/transaction/status", {
+        body: JSON.stringify({ transactionId: verifiedTransactionId }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const statusResult = await statusResponse.json();
+
+      if (!statusResponse.ok || !statusResult.success) {
+        setVerifySteps({ receipt: "idle", status: "error" });
+        throw new Error(statusResult.message || "Payment transaction is not successful.");
+      }
+
+      setVerifyMessage("Payment status checked. Generating receipt.");
+      setVerifySteps({ receipt: "loading", status: "success" });
+
+      const receiptResponse = await fetch("/api/transaction/verify", {
+        body: JSON.stringify({
+          skipStatusCheck: true,
+          transactionId: verifiedTransactionId
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const receiptResult = await receiptResponse.json();
+
+      if (!receiptResponse.ok || !receiptResult.success) {
+        setVerifySteps({ receipt: "error", status: "success" });
+        throw new Error(receiptResult.message || "Transaction verification failed.");
       }
 
       setVerifyState("success");
+      setVerifySteps({ receipt: "success", status: "success" });
       setVerifyMessage(
-        result.message || "Receipt generated. Reach out site for download receipt."
+        receiptResult.message || "Receipt generated. Reach out site for download receipt."
       );
     } catch (error) {
       setVerifyState("error");
+      setVerifySteps((currentSteps) => ({
+        receipt: currentSteps.receipt === "loading" ? "error" : currentSteps.receipt,
+        status: currentSteps.status === "loading" ? "error" : currentSteps.status
+      }));
       setVerifyMessage(
         error instanceof Error ? error.message : "Transaction verification failed."
       );
@@ -1795,7 +1896,7 @@ export default function Home() {
                 </div>
 
                 <form
-                  className="mt-6 grid gap-3 md:grid-cols-[minmax(0,1fr)_154px]"
+                  className="mt-6 grid gap-3 md:grid-cols-[minmax(0,1fr)_154px_154px]"
                   onSubmit={handleLookup}
                 >
                   <div className="relative">
@@ -1810,13 +1911,31 @@ export default function Home() {
                     />
                     <AdmissionInputIcon className="pointer-events-none absolute right-3.5 top-1/2 h-7 w-7 -translate-y-1/2 text-[#00E7B0]" />
                   </div>
-                  <Button className="h-[48px] w-full min-w-0 rounded-[6px] px-4" disabled={lookupState === "loading"} type="submit">
+                  <Button
+                    className="h-[48px] w-full min-w-0 rounded-[6px] px-4"
+                    disabled={lookupState === "loading"}
+                    type="submit"
+                  >
                     {lookupState === "loading" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Search className="h-4 w-4" />
                     )}
                     Get Payments
+                  </Button>
+                  <Button
+                    className="h-[48px] w-full min-w-0 rounded-[6px] px-4"
+                    disabled={studentSyncState === "loading"}
+                    onClick={handleStudentSync}
+                    type="button"
+                    variant="blue"
+                  >
+                    {studentSyncState === "loading" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="h-4 w-4" />
+                    )}
+                    Sync Student
                   </Button>
                 </form>
 
@@ -1833,6 +1952,22 @@ export default function Home() {
                     )}
                   >
                     {lookupMessage}
+                  </div>
+                ) : null}
+
+                {studentSyncMessage ? (
+                  <div
+                    className={cn(
+                      "mt-3 rounded-[14px] border px-4 py-3 text-sm font-semibold",
+                      studentSyncState === "error" &&
+                        "border-[#FF4D6D]/25 bg-[#FF4D6D]/10 text-[#FF4D6D]",
+                      studentSyncState === "success" &&
+                        "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]",
+                      studentSyncState === "loading" &&
+                        "border-[#4D6FFF]/25 bg-[#4D6FFF]/10 text-[#4D6FFF]"
+                    )}
+                  >
+                    {studentSyncMessage}
                   </div>
                 ) : null}
                 </div>
@@ -1951,6 +2086,50 @@ export default function Home() {
                         ? "The latest verification status is shown above."
                         : "Enter a transaction ID and click verify."}
                     </p>
+                    {showVerifySteps ? (
+                      <div className="mt-4 grid gap-2">
+                        {verifyStepItems.map((item) => (
+                          <div
+                            className={cn(
+                              "flex min-w-0 items-start gap-3 rounded-[6px] border border-[#263852] bg-[#061226]/56 px-3 py-2",
+                              item.state === "success" &&
+                                "border-[#22C55E]/20 bg-[#22C55E]/10",
+                              item.state === "error" &&
+                                "border-[#FF4D6D]/20 bg-[#FF4D6D]/10",
+                              item.state === "loading" &&
+                                "border-[#4D6FFF]/25 bg-[#4D6FFF]/10"
+                            )}
+                            key={item.label}
+                          >
+                            <div
+                              className={cn(
+                                "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#4D6FFF]/16 text-[#6F8BFF]",
+                                item.state === "success" && "bg-[#22C55E]/15 text-[#22C55E]",
+                                item.state === "error" && "bg-[#FF4D6D]/15 text-[#FF4D6D]"
+                              )}
+                            >
+                              {item.state === "loading" ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : item.state === "success" ? (
+                                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                              ) : item.state === "error" ? (
+                                <X className="h-3.5 w-3.5" strokeWidth={3} />
+                              ) : (
+                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[12px] font-semibold leading-4 text-white">
+                                {item.label}
+                              </p>
+                              <p className="mt-0.5 text-[11px] leading-4 text-[#AAB8D0]">
+                                {item.description}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 </div>
