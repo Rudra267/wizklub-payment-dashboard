@@ -6012,10 +6012,11 @@ export default function Home() {
               <label className="grid gap-2 text-sm font-medium text-white" htmlFor="username">
                 Username
                 <Input
+                  autoCapitalize="characters"
                   autoComplete="username"
                   autoFocus
                   id="username"
-                  onChange={(event) => setLoginUsername(event.target.value)}
+                  onChange={(event) => setLoginUsername(event.target.value.toUpperCase())}
                   value={loginUsername}
                 />
               </label>

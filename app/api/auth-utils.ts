@@ -23,17 +23,24 @@ function safeCompare(left: string, right: string) {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
+function normalizeEnvCredential(value: string) {
+  const trimmedValue = value.trim();
+  const withoutWrappingQuotes = trimmedValue.replace(/^["'](.+)["']$/, "$1");
+
+  return withoutWrappingQuotes.replace(/\\\$/g, "$");
+}
+
 function readConfiguredCredentials(): DashboardCredentials[] {
   const credentials: DashboardCredentials[] = [
     {
-      password: process.env.ADMIN_PASSWORD || "",
+      password: normalizeEnvCredential(process.env.ADMIN_PASSWORD || ""),
       role: "admin",
-      username: process.env.ADMIN_USERNAME || ""
+      username: normalizeEnvCredential(process.env.ADMIN_USERNAME || "")
     },
     {
-      password: process.env.WIZKLUB_PASSWORD || "",
+      password: normalizeEnvCredential(process.env.WIZKLUB_PASSWORD || ""),
       role: "wizklub",
-      username: process.env.WIZKLUB_USERNAME || ""
+      username: normalizeEnvCredential(process.env.WIZKLUB_USERNAME || "")
     }
   ];
 
@@ -57,12 +64,12 @@ function createAuthSignature(role: DashboardRole) {
 }
 
 export function verifyDashboardCredentials(username: string, password: string) {
-  const normalizedUsername = username.trim();
+  const normalizedUsername = normalizeEnvCredential(username).toUpperCase();
   const normalizedPassword = password.replace(/\\\$/g, "$");
 
   for (const credentials of readConfiguredCredentials()) {
     if (
-      safeCompare(normalizedUsername, credentials.username) &&
+      safeCompare(normalizedUsername, credentials.username.toUpperCase()) &&
       safeCompare(normalizedPassword, credentials.password)
     ) {
       return credentials.role;
