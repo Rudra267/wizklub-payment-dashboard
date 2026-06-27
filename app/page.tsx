@@ -1930,7 +1930,7 @@ function normalizeReceiptRows(data: unknown): ReciptRow[] {
   });
 }
 
-function ReciptsView() {
+function ReciptsView({ role }: { role: DashboardRole | null }) {
   const [receiptAdmissionNo, setReceiptAdmissionNo] = useState("SCS");
   const [receiptRows, setReceiptRows] = useState<ReciptRow[]>([]);
   const [receiptLookupState, setReceiptLookupState] = useState<LookupState>("idle");
@@ -1965,6 +1965,7 @@ function ReciptsView() {
   );
   const shouldShowReceiptDetails =
     receiptLookupState === "success" && receiptRows.length > 0;
+  const shouldShowReceiptStats = role !== "wizklub";
 
   useEffect(() => {
     setReceiptAdmissionNo(readStoredAdmissionNo());
@@ -2115,50 +2116,52 @@ function ReciptsView() {
 
       {shouldShowReceiptDetails ? (
         <>
-          <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              {
-                icon: FileText,
-                label: "Total Transactions",
-                tone: "bg-[#315EFF]/14 text-[#6F8BFF]",
-                value: receiptRows.length
-              },
-              {
-                icon: Check,
-                label: "Successful",
-                tone: "bg-[#00E7B0]/12 text-[#00E7B0]",
-                value: successfulReceipts.length
-              },
-              {
-                icon: RefreshCcw,
-                label: "Pending / Failed",
-                tone: "bg-[#F59E0B]/15 text-[#FBBF24]",
-                value: pendingReceipts.length
-              },
-              {
-                icon: IndianRupee,
-                label: "Total Amount",
-                tone: "bg-[#7C3AED]/16 text-[#C4B5FD]",
-                value: formatAmount(totalAmount)
-              }
-            ].map((item) => {
-              const Icon = item.icon;
+          {shouldShowReceiptStats ? (
+            <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  icon: FileText,
+                  label: "Total Transactions",
+                  tone: "bg-[#315EFF]/14 text-[#6F8BFF]",
+                  value: receiptRows.length
+                },
+                {
+                  icon: Check,
+                  label: "Successful",
+                  tone: "bg-[#00E7B0]/12 text-[#00E7B0]",
+                  value: successfulReceipts.length
+                },
+                {
+                  icon: RefreshCcw,
+                  label: "Pending / Failed",
+                  tone: "bg-[#F59E0B]/15 text-[#FBBF24]",
+                  value: pendingReceipts.length
+                },
+                {
+                  icon: IndianRupee,
+                  label: "Total Amount",
+                  tone: "bg-[#7C3AED]/16 text-[#C4B5FD]",
+                  value: formatAmount(totalAmount)
+                }
+              ].map((item) => {
+                const Icon = item.icon;
 
-              return (
-                <Card className="min-w-0 rounded-[8px] border-[#315EFF]/20 p-4" key={item.label}>
-                  <div className="flex items-center gap-4">
-                    <div className={cn("grid h-11 w-11 place-items-center rounded-[8px]", item.tone)}>
-                      <Icon className="h-5 w-5" />
+                return (
+                  <Card className="min-w-0 rounded-[8px] border-[#315EFF]/20 p-4" key={item.label}>
+                    <div className="flex items-center gap-4">
+                      <div className={cn("grid h-11 w-11 place-items-center rounded-[8px]", item.tone)}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-[#AFC0D9]">{item.label}</p>
+                        <p className="break-words text-[21px] font-bold text-white">{item.value}</p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-[11px] text-[#AFC0D9]">{item.label}</p>
-                      <p className="break-words text-[21px] font-bold text-white">{item.value}</p>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </section>
+                  </Card>
+                );
+              })}
+            </section>
+          ) : null}
 
           <Card className="min-w-0 overflow-hidden rounded-[8px] border-[#315EFF]/26 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.62))] p-4">
             <h2 className="text-[14px] font-bold text-white">Filter Receipts</h2>
@@ -6139,7 +6142,7 @@ export default function Home() {
         {isPaymentLookupView ? (
           <PaymentLookupView />
         ) : isReciptsView ? (
-          <ReciptsView />
+          <ReciptsView role={dashboardRole} />
         ) : isTransactionsView ? (
           <TransactionsView />
         ) : isStudentsView ? (
