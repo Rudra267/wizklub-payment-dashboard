@@ -26,19 +26,14 @@ function safeCompare(left: string, right: string) {
 function readConfiguredCredentials(): DashboardCredentials[] {
   const credentials: DashboardCredentials[] = [
     {
-      password: process.env.DASHBOARD_PASSWORD || process.env.ADMIN_PASSWORD || "",
+      password: process.env.ADMIN_PASSWORD || "",
       role: "admin",
-      username: process.env.DASHBOARD_USERNAME || process.env.ADMIN_USERNAME || ""
+      username: process.env.ADMIN_USERNAME || ""
     },
     {
       password: process.env.WIZKLUB_PASSWORD || "",
       role: "wizklub",
       username: process.env.WIZKLUB_USERNAME || ""
-    },
-    {
-      password: process.env.UNIFORM_PASSWORD || "",
-      role: "uniform",
-      username: process.env.UNIFORM_USERNAME || ""
     }
   ];
 
@@ -63,11 +58,12 @@ function createAuthSignature(role: DashboardRole) {
 
 export function verifyDashboardCredentials(username: string, password: string) {
   const normalizedUsername = username.trim();
+  const normalizedPassword = password.replace(/\\\$/g, "$");
 
   for (const credentials of readConfiguredCredentials()) {
     if (
       safeCompare(normalizedUsername, credentials.username) &&
-      safeCompare(password, credentials.password)
+      safeCompare(normalizedPassword, credentials.password)
     ) {
       return credentials.role;
     }
