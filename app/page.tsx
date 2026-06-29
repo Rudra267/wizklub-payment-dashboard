@@ -1858,22 +1858,54 @@ function buildReceiptButtons(record: unknown) {
   const ilReceiptUrl = readNestedValue(record, ["il_receipt_url", "ilReceiptUrl"]);
   const wkReceiptUrl = readNestedValue(record, ["wk_receipt_url", "wkReceiptUrl"]);
   const sotReceiptUrl = readNestedValue(record, ["sot_receipt_url", "sotReceiptUrl"]);
+  const sedReceiptUrl = readNestedValue(record, ["sed_receipt_url", "sedReceiptUrl"]);
+  const receiptItems = readNestedArray(record, ["receipts"]);
   const buttons: ReciptRow["receiptButtons"] = [];
+  const usedUrls = new Set<string>();
+
+  function addButton(label: string, url: string) {
+    const normalizedUrl = url.trim();
+
+    if (!normalizedUrl || usedUrls.has(normalizedUrl)) {
+      return;
+    }
+
+    usedUrls.add(normalizedUrl);
+    buttons.push({ label, url: normalizedUrl });
+  }
 
   if (receiptUrl) {
-    buttons.push({ label: "Download", url: receiptUrl });
+    addButton("Download", receiptUrl);
   }
 
   if (ilReceiptUrl) {
-    buttons.push({ label: "IL Recipt", url: ilReceiptUrl });
+    addButton("IL Recipt", ilReceiptUrl);
   }
 
   if (wkReceiptUrl) {
-    buttons.push({ label: "WK Recipt", url: wkReceiptUrl });
+    addButton("WK Recipt", wkReceiptUrl);
   }
 
   if (sotReceiptUrl) {
-    buttons.push({ label: "SOT Recipt", url: sotReceiptUrl });
+    addButton("SOT Recipt", sotReceiptUrl);
+  }
+
+  receiptItems.forEach((receiptItem) => {
+    if (!receiptItem || typeof receiptItem !== "object" || Array.isArray(receiptItem)) {
+      return;
+    }
+
+    const receiptType = readNestedValue(receiptItem, ["type"]).toLowerCase();
+    const label = readNestedValue(receiptItem, ["label", "name"]) || "Receipt";
+    const itemUrl =
+      readNestedValue(receiptItem, ["url", "receipt_url", "receiptUrl"]) ||
+      (receiptType === "sed" ? sedReceiptUrl : "");
+
+    addButton(label, itemUrl);
+  });
+
+  if (sedReceiptUrl) {
+    addButton("SED Receipt", sedReceiptUrl);
   }
 
   return buttons;
@@ -1921,6 +1953,7 @@ function normalizeReceiptRows(data: unknown): ReciptRow[] {
         readNestedValue(record, [
           "transaction_id",
           "transactionId",
+          "transactionID",
           "order_id",
           "orderId",
           "razorpay_order_id",
@@ -2498,7 +2531,8 @@ function normalizeTransactionRow(data: unknown) {
       readNestedValue(data, ["student", "student_id", "studentId", "admission_no"]) ||
       "Not available",
     transactionId:
-      readNestedValue(data, ["transaction_id", "transactionId"]) || "Not available",
+      readNestedValue(data, ["transaction_id", "transactionId", "transactionID"]) ||
+      "Not available",
     varnaReceiptId:
       readNestedValue(data, ["varna_receipt_id", "varnaReceiptId"]) || "Not available"
   };
@@ -2528,7 +2562,7 @@ function getTransactionRecordKeys(record: unknown) {
   return Array.from(
     new Set(
       [
-        readNestedValue(record, ["transaction_id", "transactionId"]),
+        readNestedValue(record, ["transaction_id", "transactionId", "transactionID"]),
         readNestedValue(record, ["varna_receipt_id", "varnaReceiptId"]),
         readNestedValue(record, [
           "razorpay_order_id",
