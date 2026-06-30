@@ -5084,7 +5084,7 @@ const sedSummaryCards = [
     accent: "linear-gradient(135deg,#00D7A8,#00836F)",
     border: "border-[#00E7B0]/44",
     icon: Check,
-    label: "Success TAX Payments",
+    label: "Success Payments",
     subLabel: "Total successful SED payments",
     value: "1,256"
   },
