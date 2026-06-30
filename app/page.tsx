@@ -5210,6 +5210,8 @@ function SedPaymentsView() {
   const [sedLookupState, setSedLookupState] = useState<LookupState>("idle");
   const [sedLookupMessage, setSedLookupMessage] = useState("");
   const [sedPage, setSedPage] = useState(1);
+  const [sedSearchInput, setSedSearchInput] = useState("");
+  const [sedSearchQuery, setSedSearchQuery] = useState("");
   const [copiedSedTransactionId, setCopiedSedTransactionId] = useState("");
   const [rehitState, setRehitState] = useState<LookupState>("idle");
   const [rehitMessage, setRehitMessage] = useState("");
@@ -5243,6 +5245,13 @@ function SedPaymentsView() {
         error instanceof Error ? error.message : "Unable to fetch SED payments."
       );
     }
+  };
+
+  const handleRefreshSedPayments = async () => {
+    setSedSearchInput("");
+    setSedSearchQuery("");
+    setSedPage(1);
+    await fetchSedPayments();
   };
 
   useEffect(() => {
@@ -5347,21 +5356,42 @@ function SedPaymentsView() {
       }),
     [sedRecords]
   );
-  const sedTotalAmount = sortedSedRecords.reduce(
+  const filteredSedRecords = useMemo(() => {
+    const query = sedSearchQuery.trim().toLowerCase();
+
+    if (!query) {
+      return sortedSedRecords;
+    }
+
+    return sortedSedRecords.filter((record) =>
+      [
+        record.transactionId,
+        record.razorpayOrderId,
+        record.razorpayPaymentId,
+        record.admissionNo,
+        record.gateway,
+        record.amount
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [sedSearchQuery, sortedSedRecords]);
+  const sedTotalAmount = filteredSedRecords.reduce(
     (sum, record) => sum + toAmountNumber(record.amount),
     0
   );
-  const latestSedPayment = sortedSedRecords[0]?.addedOn
-    ? formatSedPaymentDate(sortedSedRecords[0].addedOn).split(",")[0]
+  const latestSedPayment = filteredSedRecords[0]?.addedOn
+    ? formatSedPaymentDate(filteredSedRecords[0].addedOn).split(",")[0]
     : "Not available";
   const sedRowsPerPage = 10;
-  const sedPageCount = Math.max(1, Math.ceil(sortedSedRecords.length / sedRowsPerPage));
-  const visibleSedRecords = sortedSedRecords.slice(
+  const sedPageCount = Math.max(1, Math.ceil(filteredSedRecords.length / sedRowsPerPage));
+  const visibleSedRecords = filteredSedRecords.slice(
     (sedPage - 1) * sedRowsPerPage,
     sedPage * sedRowsPerPage
   );
-  const sedStartEntry = sortedSedRecords.length ? (sedPage - 1) * sedRowsPerPage + 1 : 0;
-  const sedEndEntry = Math.min(sedPage * sedRowsPerPage, sortedSedRecords.length);
+  const sedStartEntry = filteredSedRecords.length ? (sedPage - 1) * sedRowsPerPage + 1 : 0;
+  const sedEndEntry = Math.min(sedPage * sedRowsPerPage, filteredSedRecords.length);
   const sedPaginationItems = useMemo(() => {
     if (sedPageCount <= 7) {
       return Array.from({ length: sedPageCount }, (_, index) => index + 1);
@@ -5396,7 +5426,7 @@ function SedPaymentsView() {
   const dynamicSedSummaryCards = [
     {
       ...sedSummaryCards[0],
-      value: String(sortedSedRecords.length)
+      value: String(filteredSedRecords.length)
     },
     {
       ...sedSummaryCards[1],
@@ -5420,6 +5450,11 @@ function SedPaymentsView() {
     await navigator.clipboard.writeText(transactionId);
     setCopiedSedTransactionId(transactionId);
     window.setTimeout(() => setCopiedSedTransactionId(""), 1400);
+  }
+
+  function handleSedFilter() {
+    setSedSearchQuery(sedSearchInput);
+    setSedPage(1);
   }
 
   return (
@@ -5479,7 +5514,7 @@ function SedPaymentsView() {
             <Button
               className="h-11 min-w-[144px] rounded-[6px]"
               disabled={sedLookupState === "loading"}
-              onClick={fetchSedPayments}
+              onClick={handleRefreshSedPayments}
               type="button"
               variant="ghost"
             >
@@ -5526,31 +5561,27 @@ function SedPaymentsView() {
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(260px,1fr)_minmax(220px,320px)_minmax(200px,320px)_128px]">
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(260px,1fr)_128px]">
           <label className="relative min-w-0">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8CA3C7]" />
             <Input
               className="h-11 rounded-[6px] border-[#263852] bg-[#07172D]/74 pl-11 text-[13px] placeholder:text-[#8CA3C7]"
+              onChange={(event) => setSedSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  handleSedFilter();
+                }
+              }}
               placeholder="Search by Transaction ID, Order ID, Admission No."
-              readOnly
+              value={sedSearchInput}
             />
           </label>
-          <label className="relative min-w-0">
-            <Calendar className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8CA3C7]" />
-            <Input
-              className="h-11 rounded-[6px] border-[#263852] bg-[#07172D]/74 pl-11 text-[13px] placeholder:text-[#8CA3C7]"
-              placeholder="Select Date Range"
-              readOnly
-            />
-          </label>
-          <button
-            className="flex h-11 min-w-0 items-center justify-between rounded-[6px] border border-[#263852] bg-[#07172D]/74 px-4 text-left text-[13px] text-[#A8B8D2]"
+          <Button
+            className="h-11 rounded-[6px]"
+            onClick={handleSedFilter}
             type="button"
+            variant="ghost"
           >
-            Select Academic Year
-            <ChevronDown className="h-4 w-4" />
-          </button>
-          <Button className="h-11 rounded-[6px]" type="button" variant="ghost">
             <Filter className="h-4 w-4 text-[#00E7B0]" />
             Filter
           </Button>
@@ -5644,7 +5675,9 @@ function SedPaymentsView() {
               ) : (
                 <tr>
                   <td className="px-5 py-8 text-center text-[#A8B8D2]" colSpan={9}>
-                    {sedLookupMessage || "No successful SED payments found."}
+                    {sedSearchQuery
+                      ? "No SED payments match your search."
+                      : sedLookupMessage || "No successful SED payments found."}
                   </td>
                 </tr>
               )}
@@ -5654,13 +5687,13 @@ function SedPaymentsView() {
 
         <div className="mt-5 flex flex-col gap-4 text-[14px] text-[#A8B8D2] md:flex-row md:items-center md:justify-between">
           <p>
-            Showing {sedStartEntry} to {sedEndEntry} of {sortedSedRecords.length} entries
+            Showing {sedStartEntry} to {sedEndEntry} of {filteredSedRecords.length} entries
           </p>
           <div className="flex flex-wrap gap-2">
             <button
               aria-label="Previous SED payments page"
               className="grid h-10 min-w-10 place-items-center rounded-[6px] border border-[#263852] bg-[#07172D]/74 px-3 text-[14px] font-semibold text-[#A8B8D2] transition enabled:hover:border-[#00E7B0]/40 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={sedPage === 1 || !sortedSedRecords.length}
+              disabled={sedPage === 1 || !filteredSedRecords.length}
               onClick={() => setSedPage((page) => Math.max(1, page - 1))}
               type="button"
             >
@@ -5689,7 +5722,7 @@ function SedPaymentsView() {
             <button
               aria-label="Next SED payments page"
               className="grid h-10 min-w-10 place-items-center rounded-[6px] border border-[#263852] bg-[#07172D]/74 px-3 text-[14px] font-semibold text-[#A8B8D2] transition enabled:hover:border-[#00E7B0]/40 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={sedPage === sedPageCount || !sortedSedRecords.length}
+              disabled={sedPage === sedPageCount || !filteredSedRecords.length}
               onClick={() => setSedPage((page) => Math.min(sedPageCount, page + 1))}
               type="button"
             >
