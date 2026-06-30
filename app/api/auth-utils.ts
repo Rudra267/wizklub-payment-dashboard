@@ -2,7 +2,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 const AUTH_COOKIE_NAME = "wizklub_dashboard_auth";
-const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 30;
+const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 16;
+const EXPIRED_SESSION_MESSAGE = "Your login session expired. Please login again.";
 
 export type DashboardRole = "admin" | "uniform" | "wizklub";
 
@@ -137,7 +138,7 @@ export function clearDashboardAuthCookie(response: NextResponse) {
 
 export function unauthorizedDashboardResponse() {
   return NextResponse.json(
-    { message: "Please login to continue.", success: false },
+    { message: EXPIRED_SESSION_MESSAGE, success: false },
     { status: 401 }
   );
 }

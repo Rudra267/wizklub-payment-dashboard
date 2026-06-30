@@ -73,6 +73,7 @@ type ActiveView =
   | "Receipt Updates"
   | "Recipts"
   | "Uniform Receipts"
+  | "SED Payments"
   | "Table Lookup"
   | "Students"
   | "Book Lists"
@@ -97,6 +98,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Wizklub Payments" },
   { icon: CreditCard, label: "Receipt Updates" },
   { icon: FileText, label: "Uniform Receipts" },
+  { badge: "NEW", icon: Landmark, label: "SED Payments" },
   { icon: RefreshCcw, label: "Table Lookup" },
   { icon: BadgeCheck, label: "Refunds" },
   { icon: Landmark, label: "Settlements" },
@@ -121,6 +123,7 @@ function canAccessView(role: DashboardRole | null, label: string) {
       label === "Receipt Updates" ||
       label === "Recipts" ||
       label === "Uniform Receipts" ||
+      label === "SED Payments" ||
       label === "Table Lookup" ||
       label === "Students" ||
       label === "Book Lists" ||
@@ -313,6 +316,8 @@ function normalizeAdmissionNo(value: string) {
 }
 
 const studentAdmissionStorageKey = "wizklub_student_admission_no";
+const dashboardLoginStorageKey = "wizklub_dashboard_logged_in";
+const expiredSessionMessage = "Your login session expired. Please login again.";
 
 function readStoredAdmissionNo() {
   if (typeof window === "undefined") {
@@ -332,6 +337,25 @@ function writeStoredAdmissionNo(value: string) {
   }
 
   return admissionNo;
+}
+
+function hasStoredDashboardLogin() {
+  return (
+    typeof window !== "undefined" &&
+    window.localStorage.getItem(dashboardLoginStorageKey) === "true"
+  );
+}
+
+function writeStoredDashboardLogin() {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(dashboardLoginStorageKey, "true");
+  }
+}
+
+function clearStoredDashboardLogin() {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(dashboardLoginStorageKey);
+  }
 }
 
 function getSingleTransactionId(value: string) {
@@ -681,6 +705,11 @@ function Sidebar({
                     )}
                   />
                   <span className="min-w-0 flex-1 text-left">{item.label}</span>
+                  {"badge" in item ? (
+                    <span className="rounded-[5px] bg-[#00E7B0] px-2 py-1 text-[10px] font-black leading-none text-[#02111D]">
+                      {item.badge}
+                    </span>
+                  ) : null}
                   {hasChildren ? (
                     <ChevronDown
                       className={cn(
@@ -891,6 +920,11 @@ function MobileSidebar({
                       >
                         <Icon className="h-5 w-5" />
                         <span className="min-w-0 flex-1 text-left">{item.label}</span>
+                        {"badge" in item ? (
+                          <span className="rounded-[5px] bg-[#00E7B0] px-2 py-1 text-[10px] font-black leading-none text-[#02111D]">
+                            {item.badge}
+                          </span>
+                        ) : null}
                         {hasChildren ? (
                           <ChevronDown
                             className={cn(
@@ -5045,6 +5079,629 @@ function UniformListsView() {
   );
 }
 
+const sedSummaryCards = [
+  {
+    accent: "linear-gradient(135deg,#00D7A8,#00836F)",
+    border: "border-[#00E7B0]/44",
+    icon: Check,
+    label: "Success TAX Payments",
+    subLabel: "Total successful SED payments",
+    value: "1,256"
+  },
+  {
+    accent: "linear-gradient(135deg,#A855F7,#6D28D9)",
+    border: "border-[#A855F7]/44",
+    icon: IndianRupee,
+    label: "Total Amount",
+    subLabel: "Sum of all successful payments",
+    value: "₹ 25,78,450.00"
+  },
+  {
+    accent: "linear-gradient(135deg,#4D6FFF,#2538C9)",
+    border: "border-[#4D6FFF]/50",
+    icon: Calendar,
+    label: "Latest Payment",
+    subLabel: "Most recent successful payment",
+    value: "30 Jun 2026"
+  },
+];
+
+type SedPaymentRecord = {
+  addedOn: string;
+  admissionNo: string;
+  amount: number | string;
+  gateway: string;
+  id: string;
+  productName: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  status: string;
+  student: string;
+  transactionId: string;
+};
+
+function parseSedPaymentDate(value: string) {
+  const match = value.match(
+    /^(\d{1,2})-([A-Z]{3})-(\d{2,4})\s+(\d{1,2})\.(\d{2})\.(\d{2})\s+(AM|PM)$/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, day, monthName, yearValue, hourValue, minute, second, period] = match;
+  const monthIndex = [
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC"
+  ].indexOf(monthName.toUpperCase());
+
+  if (monthIndex < 0) {
+    return null;
+  }
+
+  const year = Number(yearValue.length === 2 ? `20${yearValue}` : yearValue);
+  const rawHour = Number(hourValue);
+  const hour =
+    period.toUpperCase() === "PM" && rawHour !== 12
+      ? rawHour + 12
+      : period.toUpperCase() === "AM" && rawHour === 12
+        ? 0
+        : rawHour;
+
+  return new Date(
+    year,
+    monthIndex,
+    Number(day),
+    hour,
+    Number(minute),
+    Number(second)
+  );
+}
+
+function formatSedPaymentDate(value: string) {
+  const date = parseSedPaymentDate(value);
+
+  if (!date) {
+    return value || "Not available";
+  }
+
+  return date.toLocaleString("en-IN", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: true,
+    minute: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+}
+
+function formatSedPaymentAmount(value: number | string) {
+  const amount = toAmountNumber(value);
+
+  return new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2
+  }).format(amount);
+}
+
+function getSedReceiptUrl(razorpayPaymentId: string) {
+  const url = new URL(
+    "https://srichaitanyaschool.net/book-kits-payments/download-receipt"
+  );
+
+  url.searchParams.set("online_transaction_no", razorpayPaymentId);
+  url.searchParams.set("sed_item_id", "1");
+
+  return url.toString();
+}
+
+function SedPaymentsView() {
+  const [sedRecords, setSedRecords] = useState<SedPaymentRecord[]>([]);
+  const [sedLookupState, setSedLookupState] = useState<LookupState>("idle");
+  const [sedLookupMessage, setSedLookupMessage] = useState("");
+  const [sedPage, setSedPage] = useState(1);
+  const [copiedSedTransactionId, setCopiedSedTransactionId] = useState("");
+  const [rehitState, setRehitState] = useState<LookupState>("idle");
+  const [rehitMessage, setRehitMessage] = useState("");
+  const [rehitProgress, setRehitProgress] = useState({
+    current: 0,
+    failed: 0,
+    success: 0,
+    total: 0
+  });
+
+  const fetchSedPayments = async () => {
+    setSedLookupState("loading");
+    setSedLookupMessage("Loading SED payments.");
+
+    try {
+      const response = await fetch("/api/sed-payments", { cache: "no-store" });
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to fetch SED payments.");
+      }
+
+      setSedRecords(Array.isArray(result.data) ? result.data : []);
+      setSedPage(1);
+      setSedLookupState("success");
+      setSedLookupMessage(result.message || "SED payments loaded.");
+    } catch (error) {
+      setSedRecords([]);
+      setSedLookupState("error");
+      setSedLookupMessage(
+        error instanceof Error ? error.message : "Unable to fetch SED payments."
+      );
+    }
+  };
+
+  useEffect(() => {
+    fetchSedPayments();
+  }, []);
+
+  async function handleRehitPendingSedTransactions() {
+    setRehitState("loading");
+    setRehitMessage("Fetching pending SED transactions.");
+    setRehitProgress({ current: 0, failed: 0, success: 0, total: 0 });
+
+    try {
+      const pendingResponse = await fetch("/api/sed-payments/pending", {
+        cache: "no-store"
+      });
+      const pendingResult = await pendingResponse.json();
+
+      if (!pendingResponse.ok || !pendingResult.success) {
+        throw new Error(
+          pendingResult.message || "Unable to fetch pending SED transactions."
+        );
+      }
+
+      const pendingTransactions = Array.isArray(pendingResult.data)
+        ? pendingResult.data.filter(
+            (transactionId: unknown): transactionId is string =>
+              typeof transactionId === "string"
+          )
+        : [];
+
+      if (!pendingTransactions.length) {
+        setRehitState("success");
+        setRehitMessage("No pending SED transactions found.");
+        return;
+      }
+
+      let successCount = 0;
+      let failedCount = 0;
+
+      setRehitProgress({
+        current: 0,
+        failed: 0,
+        success: 0,
+        total: pendingTransactions.length
+      });
+
+      for (const [index, transactionId] of pendingTransactions.entries()) {
+        setRehitMessage(
+          `Rehitting ${index + 1} of ${pendingTransactions.length}: ${transactionId}`
+        );
+
+        try {
+          const verifyResponse = await fetch("/api/transaction/verify", {
+            body: JSON.stringify({
+              skipStatusCheck: true,
+              transactionId
+            }),
+            headers: {
+              "Content-Type": "application/json"
+            },
+            method: "POST"
+          });
+          const verifyResult = await verifyResponse.json().catch(() => null);
+
+          if (!verifyResponse.ok || !verifyResult?.success) {
+            failedCount += 1;
+          } else {
+            successCount += 1;
+          }
+        } catch {
+          failedCount += 1;
+        }
+
+        setRehitProgress({
+          current: index + 1,
+          failed: failedCount,
+          success: successCount,
+          total: pendingTransactions.length
+        });
+      }
+
+      setRehitState(failedCount ? "error" : "success");
+      setRehitMessage(
+        `Rehit completed. ${successCount} succeeded, ${failedCount} failed.`
+      );
+      await fetchSedPayments();
+    } catch (error) {
+      setRehitState("error");
+      setRehitMessage(
+        error instanceof Error ? error.message : "Unable to rehit pending transactions."
+      );
+    }
+  }
+
+  const sortedSedRecords = useMemo(
+    () =>
+      [...sedRecords].sort((left, right) => {
+        const leftDate = parseSedPaymentDate(left.addedOn)?.getTime() || 0;
+        const rightDate = parseSedPaymentDate(right.addedOn)?.getTime() || 0;
+
+        return rightDate - leftDate;
+      }),
+    [sedRecords]
+  );
+  const sedTotalAmount = sortedSedRecords.reduce(
+    (sum, record) => sum + toAmountNumber(record.amount),
+    0
+  );
+  const latestSedPayment = sortedSedRecords[0]?.addedOn
+    ? formatSedPaymentDate(sortedSedRecords[0].addedOn).split(",")[0]
+    : "Not available";
+  const sedRowsPerPage = 10;
+  const sedPageCount = Math.max(1, Math.ceil(sortedSedRecords.length / sedRowsPerPage));
+  const visibleSedRecords = sortedSedRecords.slice(
+    (sedPage - 1) * sedRowsPerPage,
+    sedPage * sedRowsPerPage
+  );
+  const sedStartEntry = sortedSedRecords.length ? (sedPage - 1) * sedRowsPerPage + 1 : 0;
+  const sedEndEntry = Math.min(sedPage * sedRowsPerPage, sortedSedRecords.length);
+  const sedPaginationItems = useMemo(() => {
+    if (sedPageCount <= 7) {
+      return Array.from({ length: sedPageCount }, (_, index) => index + 1);
+    }
+
+    const pages = new Set([1, sedPageCount, sedPage - 1, sedPage, sedPage + 1]);
+
+    if (sedPage <= 4) {
+      [2, 3, 4, 5].forEach((page) => pages.add(page));
+    }
+
+    if (sedPage >= sedPageCount - 3) {
+      [sedPageCount - 4, sedPageCount - 3, sedPageCount - 2, sedPageCount - 1].forEach(
+        (page) => pages.add(page)
+      );
+    }
+
+    const sortedPages = Array.from(pages)
+      .filter((page) => page >= 1 && page <= sedPageCount)
+      .sort((left, right) => left - right);
+
+    return sortedPages.flatMap((page, index) => {
+      const previousPage = sortedPages[index - 1];
+
+      if (previousPage && page - previousPage > 1) {
+        return ["...", page];
+      }
+
+      return [page];
+    });
+  }, [sedPage, sedPageCount]);
+  const dynamicSedSummaryCards = [
+    {
+      ...sedSummaryCards[0],
+      value: String(sortedSedRecords.length)
+    },
+    {
+      ...sedSummaryCards[1],
+      value: formatAmount(sedTotalAmount)
+    },
+    {
+      ...sedSummaryCards[2],
+      value: latestSedPayment
+    }
+  ];
+
+  useEffect(() => {
+    setSedPage((currentPage) => Math.min(currentPage, sedPageCount));
+  }, [sedPageCount]);
+
+  async function handleCopySedTransactionId(transactionId: string) {
+    if (!transactionId) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(transactionId);
+    setCopiedSedTransactionId(transactionId);
+    window.setTimeout(() => setCopiedSedTransactionId(""), 1400);
+  }
+
+  return (
+    <div className="mt-8 grid gap-6">
+      <section className="grid gap-5 md:grid-cols-2 2xl:grid-cols-4">
+        {dynamicSedSummaryCards.map((card, index) => {
+          const Icon = card.icon;
+
+          return (
+            <motion.div
+              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 16 }}
+              key={card.label}
+              transition={{ delay: index * 0.05, duration: 0.36, ease: "easeOut" }}
+            >
+              <Card
+                className={cn(
+                  "relative h-[118px] overflow-hidden rounded-[8px] bg-[linear-gradient(145deg,rgba(8,20,39,.76),rgba(3,11,24,.58))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.32)]",
+                  card.border
+                )}
+              >
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_14%_20%,rgba(0,231,176,.08),transparent_30%),radial-gradient(circle_at_88%_100%,rgba(77,111,255,.05),transparent_34%)]" />
+                <div className="relative z-10 flex h-full items-center gap-4">
+                  <div
+                    className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full text-white shadow-[0_0_26px_rgba(245,158,11,.18)]"
+                    style={{ background: card.accent }}
+                  >
+                    <Icon className="h-6 w-6" strokeWidth={2.2} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="break-words text-[24px] font-bold leading-none text-white">
+                      {card.value}
+                    </p>
+                    <p className="mt-3 break-words text-[12px] font-bold text-[#FFB94A]">
+                      {card.label}
+                    </p>
+                    <p className="mt-3 break-words text-[12px] text-[#A8B8D2]">
+                      {card.subLabel}
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          );
+        })}
+      </section>
+
+      <Card className="overflow-hidden rounded-[12px] border-[#00E7B0]/28 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.62))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_20px_60px_rgba(0,0,0,.34),0_0_26px_rgba(0,231,176,.07)] sm:p-6">
+        <div className="flex flex-col gap-4 border-b border-[#2B3A52] pb-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-[18px] font-bold text-white">SED Payment Records</h2>
+            <p className="mt-3 text-[14px] text-[#A8B8D2]">
+              List of all successful SED TAX payments.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              className="h-11 min-w-[144px] rounded-[6px]"
+              disabled={sedLookupState === "loading"}
+              onClick={fetchSedPayments}
+              type="button"
+              variant="ghost"
+            >
+              <RefreshCcw
+                className={cn("h-4 w-4", sedLookupState === "loading" && "animate-spin")}
+              />
+              Refresh
+            </Button>
+            <Button
+              className="h-11 min-w-[178px] rounded-[6px]"
+              disabled={rehitState === "loading"}
+              onClick={handleRehitPendingSedTransactions}
+              type="button"
+            >
+              {rehitState === "loading" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Compass className="h-4 w-4" />
+              )}
+              {rehitState === "loading" ? "Rehitting" : "Rehit Pending"}
+            </Button>
+          </div>
+        </div>
+
+        {rehitMessage ? (
+          <div
+            className={cn(
+              "mt-5 rounded-[8px] border px-4 py-3 text-[13px] font-semibold",
+              rehitState === "loading" &&
+                "border-[#4D6FFF]/25 bg-[#4D6FFF]/10 text-[#B8C6FF]",
+              rehitState === "success" &&
+                "border-[#00E7B0]/25 bg-[#00E7B0]/10 text-[#00E7B0]",
+              rehitState === "error" &&
+                "border-[#FF4D6D]/25 bg-[#FF4D6D]/10 text-[#FF8DA1]"
+            )}
+          >
+            <div>{rehitMessage}</div>
+            {rehitProgress.total ? (
+              <div className="mt-2 text-[12px] text-[#A8B8D2]">
+                Processed {rehitProgress.current}/{rehitProgress.total} · Success{" "}
+                {rehitProgress.success} · Failed {rehitProgress.failed}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(260px,1fr)_minmax(220px,320px)_minmax(200px,320px)_128px]">
+          <label className="relative min-w-0">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8CA3C7]" />
+            <Input
+              className="h-11 rounded-[6px] border-[#263852] bg-[#07172D]/74 pl-11 text-[13px] placeholder:text-[#8CA3C7]"
+              placeholder="Search by Transaction ID, Order ID, Admission No."
+              readOnly
+            />
+          </label>
+          <label className="relative min-w-0">
+            <Calendar className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8CA3C7]" />
+            <Input
+              className="h-11 rounded-[6px] border-[#263852] bg-[#07172D]/74 pl-11 text-[13px] placeholder:text-[#8CA3C7]"
+              placeholder="Select Date Range"
+              readOnly
+            />
+          </label>
+          <button
+            className="flex h-11 min-w-0 items-center justify-between rounded-[6px] border border-[#263852] bg-[#07172D]/74 px-4 text-left text-[13px] text-[#A8B8D2]"
+            type="button"
+          >
+            Select Academic Year
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <Button className="h-11 rounded-[6px]" type="button" variant="ghost">
+            <Filter className="h-4 w-4 text-[#00E7B0]" />
+            Filter
+          </Button>
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-[8px] border border-[#263852]">
+          <table className="w-full min-w-[960px] border-collapse text-left text-[14px]">
+            <thead className="bg-[#0A1A31]/72 text-[#B9C6DA]">
+              <tr>
+                {[
+                  { align: "text-left", label: "#" },
+                  { align: "text-left", label: "Transaction ID" },
+                  { align: "text-left", label: "Order ID" },
+                  { align: "text-left", label: "Admission No." },
+                  { align: "text-left", label: "Amount" },
+                  { align: "text-left", label: "Payment Date" },
+                  { align: "text-left", label: "Gateway" },
+                  { align: "text-left", label: "Status" },
+                  { align: "text-left", label: "Receipt" }
+                ].map((heading) => (
+                  <th
+                    className={cn(
+                      "border-b border-[#263852] px-5 py-4 font-bold",
+                      heading.align
+                    )}
+                    key={heading.label}
+                  >
+                    {heading.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sedLookupState === "loading" ? (
+                <tr>
+                  <td className="px-5 py-8 text-center text-[#A8B8D2]" colSpan={9}>
+                    Loading SED payments...
+                  </td>
+                </tr>
+              ) : visibleSedRecords.length ? (
+                visibleSedRecords.map((record, index) => (
+                  <tr
+                    className="border-b border-[#263852]/86 text-[#D8E1EF] last:border-b-0"
+                    key={record.id || record.transactionId}
+                  >
+                    <td className="px-5 py-3.5">{sedStartEntry + index}</td>
+                    <td className="px-5 py-3.5">
+                      <button
+                        className="group relative inline-flex w-full max-w-[245px] items-center justify-between gap-3 text-left text-[#4D7CFF] transition hover:text-[#78A0FF] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#4D6FFF]/20"
+                        onClick={() => handleCopySedTransactionId(record.transactionId)}
+                        type="button"
+                      >
+                        <span className="min-w-0 break-all">{record.transactionId}</span>
+                        <Copy className="h-4 w-4 shrink-0 opacity-90" />
+                        <span className="pointer-events-none absolute -top-10 left-0 z-20 hidden whitespace-nowrap rounded-[5px] bg-[#07172D] px-3 py-2 text-[12px] font-bold text-white opacity-0 shadow-[0_12px_28px_rgba(0,0,0,.32)] transition group-hover:opacity-100 sm:block">
+                          {copiedSedTransactionId === record.transactionId
+                            ? "Copied"
+                            : "Click to copy"}
+                        </span>
+                      </button>
+                    </td>
+                    <td className="px-5 py-3.5">{record.razorpayOrderId}</td>
+                    <td className="px-5 py-3.5">{record.admissionNo}</td>
+                    <td className="px-5 py-3.5 font-semibold text-white">
+                      ₹{formatSedPaymentAmount(record.amount)}
+                    </td>
+                    <td className="px-5 py-3.5">{formatSedPaymentDate(record.addedOn)}</td>
+                    <td className="px-5 py-3.5">{record.gateway}</td>
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex rounded-[8px] bg-[#00E7B0]/16 px-3 py-1.5 text-[12px] font-black text-[#00E7B0]">
+                        Success
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {record.razorpayPaymentId ? (
+                        <a
+                          className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#4D6FFF]/30 bg-[#4D6FFF]/10 px-3 text-[12px] font-bold text-[#8FB0FF] transition hover:border-[#00E7B0]/45 hover:bg-[#00E7B0]/10 hover:text-[#00E7B0]"
+                          href={getSedReceiptUrl(record.razorpayPaymentId)}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          SED Receipt
+                        </a>
+                      ) : (
+                        <span className="text-[12px] text-[#6F7F98]">Not available</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-5 py-8 text-center text-[#A8B8D2]" colSpan={9}>
+                    {sedLookupMessage || "No successful SED payments found."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-4 text-[14px] text-[#A8B8D2] md:flex-row md:items-center md:justify-between">
+          <p>
+            Showing {sedStartEntry} to {sedEndEntry} of {sortedSedRecords.length} entries
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              aria-label="Previous SED payments page"
+              className="grid h-10 min-w-10 place-items-center rounded-[6px] border border-[#263852] bg-[#07172D]/74 px-3 text-[14px] font-semibold text-[#A8B8D2] transition enabled:hover:border-[#00E7B0]/40 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={sedPage === 1 || !sortedSedRecords.length}
+              onClick={() => setSedPage((page) => Math.max(1, page - 1))}
+              type="button"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            {sedPaginationItems.map((page, index) => (
+              <button
+                className={cn(
+                  "grid h-10 min-w-10 place-items-center rounded-[6px] border border-[#263852] bg-[#07172D]/74 px-3 text-[14px] font-semibold text-[#A8B8D2] transition enabled:hover:border-[#00E7B0]/40 enabled:hover:text-white disabled:cursor-default",
+                  page === sedPage &&
+                    "border-[#00E7B0] bg-gradient-to-r from-[#00E7B0] to-[#008E78] text-white shadow-[0_0_26px_rgba(0,231,176,.25)]",
+                  page === "..." && "text-[#6F7F98]"
+                )}
+                disabled={page === "..."}
+                key={`${page}-${index}`}
+                onClick={() => {
+                  if (typeof page === "number") {
+                    setSedPage(page);
+                  }
+                }}
+                type="button"
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              aria-label="Next SED payments page"
+              className="grid h-10 min-w-10 place-items-center rounded-[6px] border border-[#263852] bg-[#07172D]/74 px-3 text-[14px] font-semibold text-[#A8B8D2] transition enabled:hover:border-[#00E7B0]/40 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={sedPage === sedPageCount || !sortedSedRecords.length}
+              onClick={() => setSedPage((page) => Math.min(sedPageCount, page + 1))}
+              type="button"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function UniformReceiptsView() {
   const [receiptDate, setReceiptDate] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
@@ -5599,6 +6256,8 @@ export default function Home() {
 
   useEffect(() => {
     async function checkSession() {
+      const hadDashboardLogin = hasStoredDashboardLogin();
+
       try {
         const response = await fetch("/api/auth/session", {
           cache: "no-store"
@@ -5613,9 +6272,17 @@ export default function Home() {
         setDashboardRole(role);
         setActiveView(getDefaultViewForRole(role));
         setAuthState(result.authenticated && role ? "loggedIn" : "loggedOut");
+        setLoginMessage(
+          result.authenticated && role
+            ? ""
+            : hadDashboardLogin
+              ? expiredSessionMessage
+              : ""
+        );
       } catch {
         setDashboardRole(null);
         setAuthState("loggedOut");
+        setLoginMessage(hadDashboardLogin ? expiredSessionMessage : "");
       }
     }
 
@@ -5698,6 +6365,7 @@ export default function Home() {
   const isPaymentLookupView = activeView === "Receipt Updates";
   const isReciptsView = activeView === "Recipts";
   const isTransactionsView = activeView === "Table Lookup";
+  const isSedPaymentsView = activeView === "SED Payments";
   const isStudentsView = activeView === "Students";
   const isStudentBookListView = activeView === "Book Lists";
   const isUniformListsView = activeView === "Uniform Lists";
@@ -5707,6 +6375,8 @@ export default function Home() {
       ? "Receipts"
     : isTransactionsView
       ? "Table Lookup"
+    : isSedPaymentsView
+      ? "SED Payments"
       : isUniformListsView
         ? "Uniform Lists"
       : isStudentBookListView
@@ -5722,6 +6392,8 @@ export default function Home() {
       ? "View and download receipts for the selected student."
     : isTransactionsView
       ? "View and search all payment transactions across different tables."
+    : isSedPaymentsView
+      ? "View all successful SED (Service Education Development) TAX payments."
       : isUniformListsView
         ? "View uniform kits and products available for the selected student."
       : isStudentBookListView
@@ -5737,6 +6409,8 @@ export default function Home() {
       ? "STUDENTS > RECEIPT DOWNLOAD"
     : isTransactionsView
       ? "TABLE LOOKUP"
+    : isSedPaymentsView
+      ? "FEE PAYMENTS"
       : isUniformListsView
         ? "STUDENTS > UNIFORM LISTS"
       : isStudentBookListView
@@ -5769,6 +6443,23 @@ export default function Home() {
     }
   ];
   const showVerifySteps = verifyStepItems.some((item) => item.state !== "idle");
+
+  function handleExpiredLoginSession(message = expiredSessionMessage) {
+    clearStoredDashboardLogin();
+    setAuthState("loggedOut");
+    setDashboardRole(null);
+    setActiveView("Wizklub Payments");
+    setPayments([]);
+    setLookupState("idle");
+    setLookupMessage("");
+    setStudentSyncState("idle");
+    setStudentSyncMessage("");
+    setVerifyState("idle");
+    setVerifyMessage("");
+    setVerifySteps({ receipt: "idle", status: "idle" });
+    setLoginState("error");
+    setLoginMessage(message);
+  }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -5810,6 +6501,7 @@ export default function Home() {
       }
 
       await waitForMinimumDuration(loginStartedAt, 2500);
+      writeStoredDashboardLogin();
       setDashboardRole(role);
       setActiveView(getDefaultViewForRole(role));
       setAuthState("loggedIn");
@@ -5827,6 +6519,7 @@ export default function Home() {
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    clearStoredDashboardLogin();
     setAuthState("loggedOut");
     setDashboardRole(null);
     setActiveView("Wizklub Payments");
@@ -5860,6 +6553,13 @@ export default function Home() {
         `/api/payments?admissionNo=${encodeURIComponent(trimmedAdmissionNo)}`
       );
       const result = await response.json();
+
+      if (response.status === 401) {
+        handleExpiredLoginSession(
+          typeof result.message === "string" ? result.message : expiredSessionMessage
+        );
+        return;
+      }
 
       if (!response.ok || !result.success) {
         throw new Error(result.message || "Unable to fetch payment details.");
@@ -5905,6 +6605,13 @@ export default function Home() {
         method: "POST"
       });
       const result = await response.json();
+
+      if (response.status === 401) {
+        handleExpiredLoginSession(
+          typeof result.message === "string" ? result.message : expiredSessionMessage
+        );
+        return;
+      }
 
       if (!response.ok || !result.success) {
         throw new Error(result.message || "Student sync failed.");
@@ -5954,6 +6661,14 @@ export default function Home() {
       });
       const statusResult = await statusResponse.json();
 
+      if (statusResponse.status === 401) {
+        setVerifySteps({ receipt: "idle", status: "error" });
+        handleExpiredLoginSession(
+          typeof statusResult.message === "string" ? statusResult.message : expiredSessionMessage
+        );
+        return;
+      }
+
       if (!statusResponse.ok || !statusResult.success) {
         setVerifySteps({ receipt: "idle", status: "error" });
         throw new Error(statusResult.message || "Payment transaction is not successful.");
@@ -5973,6 +6688,14 @@ export default function Home() {
         method: "POST"
       });
       const receiptResult = await receiptResponse.json();
+
+      if (receiptResponse.status === 401) {
+        setVerifySteps({ receipt: "error", status: "success" });
+        handleExpiredLoginSession(
+          typeof receiptResult.message === "string" ? receiptResult.message : expiredSessionMessage
+        );
+        return;
+      }
 
       if (!receiptResponse.ok || !receiptResult.success) {
         setVerifySteps({ receipt: "error", status: "success" });
@@ -6179,6 +6902,8 @@ export default function Home() {
           <ReciptsView role={dashboardRole} />
         ) : isTransactionsView ? (
           <TransactionsView />
+        ) : isSedPaymentsView ? (
+          <SedPaymentsView />
         ) : isStudentsView ? (
           <StudentsView />
         ) : isStudentBookListView ? (
