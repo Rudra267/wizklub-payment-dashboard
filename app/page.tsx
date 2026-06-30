@@ -6393,7 +6393,7 @@ export default function Home() {
     : isTransactionsView
       ? "View and search all payment transactions across different tables."
     : isSedPaymentsView
-      ? "View all successful SED (Service Education Development) TAX payments."
+      ? "View all successful SED (Student Education Diagnostics) Transaction payments."
       : isUniformListsView
         ? "View uniform kits and products available for the selected student."
       : isStudentBookListView
