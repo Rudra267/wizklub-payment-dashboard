@@ -5472,7 +5472,7 @@ function SedPaymentsView() {
           <div>
             <h2 className="text-[18px] font-bold text-white">SED Payment Records</h2>
             <p className="mt-3 text-[14px] text-[#A8B8D2]">
-              List of all successful SED TAX payments.
+              List of all successful SED payments.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
