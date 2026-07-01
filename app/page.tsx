@@ -678,9 +678,9 @@ function Sidebar({
                   aria-disabled={!isEnabled}
                   aria-expanded={hasChildren ? isStudentsOpen : undefined}
                   className={cn(
-                    "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus-visible:outline-none max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
+                    "group flex h-[52px] items-center gap-4 rounded-[13px] border border-transparent px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                     isActive &&
-                      "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)] hover:bg-[#00E7B0]/14",
+                      "bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)] hover:bg-[#00E7B0]/14",
                     isEnabled &&
                       !isActive &&
                       "text-[#AFC0D9] hover:bg-white/[.04] hover:text-white",
@@ -895,9 +895,9 @@ function MobileSidebar({
                         aria-disabled={!isEnabled}
                         aria-expanded={hasChildren ? isStudentsOpen : undefined}
                         className={cn(
-                          "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus-visible:outline-none max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
+                          "group flex h-[52px] items-center gap-4 rounded-[13px] border border-transparent px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                           isActive &&
-                            "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)]",
+                            "bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)]",
                           isEnabled &&
                             !isActive &&
                             "text-[#AFC0D9] hover:bg-white/[.04] hover:text-white",
