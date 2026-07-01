@@ -23,7 +23,7 @@ const buttonVariants = cva(
         ghost:
           "border border-white/10 bg-[#061226]/70 text-white hover:border-[#00E7B0]/30 hover:bg-[#0A1B35]",
         sidebar:
-          "justify-start rounded-[14px] bg-transparent px-4 text-white/84 shadow-none hover:scale-[1.02] hover:bg-[#00E7B0]/10 hover:text-white"
+          "justify-start rounded-[14px] bg-transparent px-4 text-white/84 shadow-none hover:bg-[#00E7B0]/10 hover:text-white"
       }
     }
   }

@@ -104,8 +104,6 @@ const navItems = [
   { badge: "NEW", icon: Landmark, label: "SED Payments" },
   { badge: "NEW", icon: UserRoundSearch, label: "Sync Users" },
   { icon: RefreshCcw, label: "Table Lookup" },
-  { icon: BadgeCheck, label: "Refunds" },
-  { icon: Landmark, label: "Settlements" },
   { icon: BarChart3, label: "Reports" },
   {
     children: [
@@ -680,12 +678,12 @@ function Sidebar({
                   aria-disabled={!isEnabled}
                   aria-expanded={hasChildren ? isStudentsOpen : undefined}
                   className={cn(
-                    "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
+                    "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus-visible:outline-none max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                     isActive &&
-                      "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)] hover:scale-[1.015] hover:bg-[#00E7B0]/14",
+                      "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)] hover:bg-[#00E7B0]/14",
                     isEnabled &&
                       !isActive &&
-                      "text-[#AFC0D9] hover:scale-[1.015] hover:bg-white/[.04] hover:text-white",
+                      "text-[#AFC0D9] hover:bg-white/[.04] hover:text-white",
                     !isEnabled &&
                       "cursor-not-allowed text-[#60708A] opacity-50"
                   )}
@@ -706,10 +704,7 @@ function Sidebar({
                   type="button"
                 >
                   <Icon
-                    className={cn(
-                      "h-5 w-5 transition",
-                      isActive && "group-hover:scale-105"
-                    )}
+                    className="h-5 w-5 transition"
                   />
                   <span className="min-w-0 flex-1 text-left">{item.label}</span>
                   {"badge" in item ? (
@@ -738,7 +733,7 @@ function Sidebar({
                         <button
                           aria-disabled={!isChildEnabled}
                           className={cn(
-                            "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition max-[760px]:h-9",
+                            "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition focus:outline-none focus-visible:outline-none max-[760px]:h-9",
                             isChildActive &&
                               "bg-[#00E7B0]/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.04)]",
                             isChildEnabled &&
@@ -900,7 +895,7 @@ function MobileSidebar({
                         aria-disabled={!isEnabled}
                         aria-expanded={hasChildren ? isStudentsOpen : undefined}
                         className={cn(
-                          "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
+                          "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus-visible:outline-none max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                           isActive &&
                             "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)]",
                           isEnabled &&
@@ -953,7 +948,7 @@ function MobileSidebar({
                               <button
                                 aria-disabled={!isChildEnabled}
                                 className={cn(
-                                  "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition max-[760px]:h-9",
+                                  "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition focus:outline-none focus-visible:outline-none max-[760px]:h-9",
                                   isChildActive &&
                                     "bg-[#00E7B0]/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.04)]",
                                   isChildEnabled &&
