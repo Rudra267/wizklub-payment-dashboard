@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ElementType, FormEvent, ReactNode } from "react";
+import type { ChangeEvent, ElementType, FormEvent, ReactNode, RefObject } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -40,6 +40,7 @@ import {
   Shirt,
   ShoppingBag,
   Truck,
+  Upload,
   UserRound,
   UserRoundSearch,
   X
@@ -49,6 +50,7 @@ import {
   AreaChart,
   Tooltip
 } from "recharts";
+import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -74,6 +76,7 @@ type ActiveView =
   | "Recipts"
   | "Uniform Receipts"
   | "SED Payments"
+  | "Sync Users"
   | "Table Lookup"
   | "Students"
   | "Book Lists"
@@ -99,6 +102,7 @@ const navItems = [
   { icon: CreditCard, label: "Receipt Updates" },
   { icon: FileText, label: "Uniform Receipts" },
   { badge: "NEW", icon: Landmark, label: "SED Payments" },
+  { badge: "NEW", icon: UserRoundSearch, label: "Sync Users" },
   { icon: RefreshCcw, label: "Table Lookup" },
   { icon: BadgeCheck, label: "Refunds" },
   { icon: Landmark, label: "Settlements" },
@@ -124,6 +128,7 @@ function canAccessView(role: DashboardRole | null, label: string) {
       label === "Recipts" ||
       label === "Uniform Receipts" ||
       label === "SED Payments" ||
+      label === "Sync Users" ||
       label === "Table Lookup" ||
       label === "Students" ||
       label === "Book Lists" ||
@@ -612,8 +617,8 @@ function VerificationShieldIcon({ className }: { className?: string }) {
 
 function LogoMark() {
   return (
-    <div className="flex items-center gap-3">
-      <div className="relative h-11 w-11 overflow-hidden rounded-[12px] border border-[#00E7B0]/10">
+    <div className="flex min-w-0 items-center gap-3">
+      <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-[12px] border border-[#00E7B0]/10 max-[380px]:h-10 max-[380px]:w-10">
         <Image
           alt="Wizklub secure payments logo"
           className="scale-[1.55] object-cover"
@@ -623,9 +628,11 @@ function LogoMark() {
           src={logoImage}
         />
       </div>
-      <div>
-        <div className="text-[18px] font-bold leading-none text-white">PaySync</div>
-        <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#00E7B0]">
+      <div className="min-w-0">
+        <div className="truncate text-[18px] font-bold leading-none text-white max-[380px]:text-[16px]">
+          PaySync
+        </div>
+        <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-[#00E7B0] max-[380px]:text-[9px]">
           System Dashboard
         </div>
       </div>
@@ -649,13 +656,13 @@ function Sidebar({
   );
 
   return (
-    <aside className="fixed inset-y-0 left-0 hidden w-[280px] overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#02111D] via-[#021725] to-[#041E33] p-4 text-white shadow-[24px_0_70px_rgba(0,0,0,.34)] xl:flex xl:flex-col">
+    <aside className="fixed inset-y-0 left-0 hidden w-[304px] overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#02111D] via-[#021725] to-[#041E33] p-4 text-white shadow-[24px_0_70px_rgba(0,0,0,.34)] xl:flex xl:flex-col">
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-        <div className="px-2 py-3">
+        <div className="shrink-0 px-2 py-3 max-[760px]:py-2">
           <LogoMark />
         </div>
 
-        <nav className="mt-8 grid gap-2">
+        <nav className="mt-8 grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[760px]:mt-4 max-[760px]:gap-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const children = "children" in item ? item.children ?? [] : [];
@@ -673,7 +680,7 @@ function Sidebar({
                   aria-disabled={!isEnabled}
                   aria-expanded={hasChildren ? isStudentsOpen : undefined}
                   className={cn(
-                    "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200",
+                    "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                     isActive &&
                       "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)] hover:scale-[1.015] hover:bg-[#00E7B0]/14",
                     isEnabled &&
@@ -731,7 +738,7 @@ function Sidebar({
                         <button
                           aria-disabled={!isChildEnabled}
                           className={cn(
-                            "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition",
+                            "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition max-[760px]:h-9",
                             isChildActive &&
                               "bg-[#00E7B0]/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.04)]",
                             isChildEnabled &&
@@ -758,7 +765,7 @@ function Sidebar({
           })}
         </nav>
 
-        <div className="mt-auto rounded-[10px] border border-[#00E7B0]/14 bg-[rgba(6,18,38,.66)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_0_32px_rgba(0,231,176,.06)] backdrop-blur-xl">
+        <div className="mt-4 shrink-0 rounded-[10px] border border-[#00E7B0]/14 bg-[rgba(6,18,38,.66)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_0_32px_rgba(0,231,176,.06)] backdrop-blur-xl max-[760px]:hidden">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-[9px] bg-[#00E7B0]/10 text-[#00E7B0]">
               <LockKeyhole className="h-5 w-5" strokeWidth={2.6} />
@@ -855,17 +862,17 @@ function MobileSidebar({
           />
           <motion.aside
             animate={{ x: 0 }}
-            className="absolute inset-y-0 left-0 flex w-[280px] max-w-[86vw] flex-col overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#02111D] via-[#021725] to-[#041E33] p-4 text-white shadow-[24px_0_70px_rgba(0,0,0,.46)]"
+            className="absolute inset-y-0 left-0 flex w-[min(300px,88vw)] flex-col overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#02111D] via-[#021725] to-[#041E33] p-4 text-white shadow-[24px_0_70px_rgba(0,0,0,.46)] max-[380px]:w-[92vw] max-[380px]:p-3"
             exit={{ x: "-100%" }}
             initial={{ x: "-100%" }}
             transition={{ duration: 0.24, ease: "easeOut" }}
           >
             <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-              <div className="flex items-center justify-between px-2 py-3">
+              <div className="flex shrink-0 items-center justify-between gap-3 px-2 py-3 max-[760px]:py-2">
                 <LogoMark />
                 <Button
                   aria-label="Close menu"
-                  className="h-10 w-10"
+                  className="h-10 w-10 shrink-0"
                   onClick={onClose}
                   size="icon"
                   type="button"
@@ -875,7 +882,7 @@ function MobileSidebar({
                 </Button>
               </div>
 
-              <nav className="mt-8 grid gap-2">
+              <nav className="mt-8 grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[760px]:mt-4 max-[760px]:gap-1.5">
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const children = "children" in item ? item.children ?? [] : [];
@@ -893,7 +900,7 @@ function MobileSidebar({
                         aria-disabled={!isEnabled}
                         aria-expanded={hasChildren ? isStudentsOpen : undefined}
                         className={cn(
-                          "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200",
+                          "group flex h-[52px] items-center gap-4 rounded-[13px] px-4 text-[15px] font-medium transition duration-200 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                           isActive &&
                             "border border-[#00E7B0]/24 bg-[#00E7B0]/12 text-white shadow-[0_0_28px_rgba(0,231,176,.14),inset_0_1px_0_rgba(255,255,255,.05)]",
                           isEnabled &&
@@ -946,7 +953,7 @@ function MobileSidebar({
                               <button
                                 aria-disabled={!isChildEnabled}
                                 className={cn(
-                                  "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition",
+                                  "flex h-10 items-center gap-3 rounded-[9px] px-3 text-[13px] font-semibold transition max-[760px]:h-9",
                                   isChildActive &&
                                     "bg-[#00E7B0]/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.04)]",
                                   isChildEnabled &&
@@ -976,7 +983,7 @@ function MobileSidebar({
                 })}
               </nav>
 
-              <div className="mt-auto rounded-[10px] border border-[#00E7B0]/14 bg-[rgba(6,18,38,.66)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_0_32px_rgba(0,231,176,.06)] backdrop-blur-xl">
+              <div className="mt-4 shrink-0 rounded-[10px] border border-[#00E7B0]/14 bg-[rgba(6,18,38,.66)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_0_32px_rgba(0,231,176,.06)] backdrop-blur-xl max-[700px]:hidden">
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-[9px] bg-[#00E7B0]/10 text-[#00E7B0]">
                     <LockKeyhole className="h-5 w-5" strokeWidth={2.6} />
@@ -996,6 +1003,755 @@ function MobileSidebar({
         </div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+type ManualSyncResultStatus = "success" | "exists" | "failed";
+
+type ManualSyncResult = {
+  employeeId: string;
+  message: string;
+  status: ManualSyncResultStatus;
+  syncedAt: string;
+};
+
+type SyncResultGroup = {
+  accent: string;
+  icon: ElementType;
+  iconClassName: string;
+  rows: ManualSyncResult[];
+  title: string;
+};
+
+function parseEmployeeIds(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function readEmployeeIdsFromWorksheetRows(rows: unknown[][]) {
+  if (!rows.length) {
+    return [];
+  }
+
+  const headerRow = rows[0].map((cell) => String(cell ?? "").trim().toLowerCase());
+  const employeeIdColumnIndex = headerRow.findIndex(
+    (cell) => cell === "employee_id" || cell === "employee id" || cell === "employeeid"
+  );
+  const columnIndex = employeeIdColumnIndex >= 0 ? employeeIdColumnIndex : 0;
+  const startIndex = employeeIdColumnIndex >= 0 ? 1 : 0;
+
+  return Array.from(
+    new Set(
+      rows
+        .slice(startIndex)
+        .map((row) => String(row[columnIndex] ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function formatManualSyncDate(date: Date) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: true,
+    minute: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
+
+function formatSyncDuration(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  return `${seconds}s`;
+}
+
+function classifyManualSyncResult(success: boolean, message: string): ManualSyncResultStatus {
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("already") ||
+    normalizedMessage.includes("exists") ||
+    normalizedMessage.includes("duplicate") ||
+    normalizedMessage.includes("up to date") ||
+    normalizedMessage.includes("skipped")
+  ) {
+    return "exists";
+  }
+
+  return success ? "success" : "failed";
+}
+
+function parseTableUserSyncData(data: string) {
+  const records: ManualSyncResult[] = [];
+  const lines = data
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  let currentSkipped = "0";
+  let currentEmployeeId = "";
+
+  for (const line of lines) {
+    const skippedMatch = line.match(/Skipped\s*==\s*(\d+)/i);
+    const employeeIdMatch = line.match(/varna\s*id\s*:==\s*([A-Za-z0-9_-]+)/i);
+    const statusMatch = line.match(/status\s*:==\s*(\d+)/i);
+
+    if (skippedMatch) {
+      currentSkipped = skippedMatch[1];
+    }
+
+    if (employeeIdMatch) {
+      currentEmployeeId = employeeIdMatch[1];
+    }
+
+    if (statusMatch && currentEmployeeId) {
+      const statusValue = statusMatch[1];
+      const isSkipped = currentSkipped !== "0";
+      const isSynced = statusValue === "1";
+      const status: ManualSyncResultStatus = isSkipped
+        ? "failed"
+        : isSynced
+          ? "success"
+          : "exists";
+
+      records.push({
+        employeeId: currentEmployeeId,
+        message: isSkipped
+          ? "User skipped during backend sync."
+          : isSynced
+            ? "User synced successfully."
+            : "User already exists or no change.",
+        status,
+        syncedAt: formatManualSyncDate(new Date())
+      });
+      currentSkipped = "0";
+      currentEmployeeId = "";
+    }
+  }
+
+  return records;
+}
+
+function SyncResultTable({
+  group,
+  scrollRef
+}: {
+  group: SyncResultGroup;
+  scrollRef?: RefObject<HTMLDivElement | null>;
+}) {
+  const Icon = group.icon;
+
+  return (
+    <div className={cn("flex min-h-0 flex-col rounded-[8px] border p-4", group.accent)}>
+      <div className="flex shrink-0 items-center gap-2">
+        <Icon className={cn("h-4 w-4", group.iconClassName)} strokeWidth={2.8} />
+        <h3 className="text-[13px] font-bold text-white">{group.title}</h3>
+      </div>
+      <div
+        className="mt-4 max-h-[min(62vh,560px)] min-h-[260px] min-w-0 overflow-auto overscroll-contain rounded-[6px] pr-1 [scrollbar-color:#315EFF_#07172D] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#315EFF] [&::-webkit-scrollbar-track]:bg-[#07172D] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2"
+        ref={scrollRef}
+      >
+        <table className="w-full min-w-[540px] border-collapse text-left text-[12px]">
+          <thead className="sticky top-0 z-10 bg-[#0A1B35] text-[#8CA3C7] shadow-[0_1px_0_rgba(255,255,255,.06)]">
+            <tr>
+              {["#", "Employee ID", "Message", "Synced At"].map((heading) => (
+                <th className="px-4 py-3 font-medium" key={heading}>
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {group.rows.length ? (
+              group.rows.map((row, index) => (
+                <tr
+                  className="border-t border-white/[.035] bg-[#07172D]/52"
+                  key={`${group.title}-${row.employeeId}-${index}`}
+                >
+                  <td className="px-4 py-3 text-[#C7D2E4]">{index + 1}</td>
+                  <td className="px-4 py-3 text-[#C7D2E4]">{row.employeeId}</td>
+                  <td className="px-4 py-3 text-white">{row.message}</td>
+                  <td className="px-4 py-3 text-[#C7D2E4]">{row.syncedAt}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-4 py-5 text-center text-[#8CA3C7]" colSpan={4}>
+                  No records in this group.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SyncUsersView() {
+  const [employeeIdsInput, setEmployeeIdsInput] = useState("");
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [manualSyncResults, setManualSyncResults] = useState<ManualSyncResult[]>([]);
+  const [manualSyncMessage, setManualSyncMessage] = useState("");
+  const [manualSyncStartedTotal, setManualSyncStartedTotal] = useState(0);
+  const [manualSyncCompletedAt, setManualSyncCompletedAt] = useState("");
+  const [manualSyncStartedAt, setManualSyncStartedAt] = useState<number | null>(null);
+  const [manualSyncElapsedMs, setManualSyncElapsedMs] = useState(0);
+  const [uploadedEmployeeFileName, setUploadedEmployeeFileName] = useState("");
+  const [activeManualSyncTab, setActiveManualSyncTab] = useState<
+    "all" | ManualSyncResultStatus
+  >("all");
+  const successResultsScrollRef = useRef<HTMLDivElement | null>(null);
+  const parsedEmployeeIds = useMemo(
+    () => parseEmployeeIds(employeeIdsInput),
+    [employeeIdsInput]
+  );
+
+  useEffect(() => {
+    if (!isManualSyncing || manualSyncStartedAt === null) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setManualSyncElapsedMs(Date.now() - manualSyncStartedAt);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isManualSyncing, manualSyncStartedAt]);
+
+  useEffect(() => {
+    if (!isManualSyncing || activeManualSyncTab !== "all") {
+      return;
+    }
+
+    const scrollElement = successResultsScrollRef.current;
+
+    if (!scrollElement) {
+      return;
+    }
+
+    scrollElement.scrollTop = scrollElement.scrollHeight;
+  }, [activeManualSyncTab, isManualSyncing, manualSyncResults.length]);
+
+  const successfulResults = manualSyncResults.filter((result) => result.status === "success");
+  const existingResults = manualSyncResults.filter((result) => result.status === "exists");
+  const failedResults = manualSyncResults.filter((result) => result.status === "failed");
+  const submittedEmployeeIdCount =
+    manualSyncStartedTotal || manualSyncResults.length || parsedEmployeeIds.length;
+  const syncOverviewStats = [
+    {
+      accent: "bg-[#315EFF]/22 text-[#4D8DFF]",
+      icon: UserRoundSearch,
+      label: "Total IDs",
+      subtitle: "Unique IDs submitted",
+      value: String(submittedEmployeeIdCount)
+    },
+    {
+      accent: "bg-[#00E7B0]/16 text-[#00E7B0]",
+      icon: BadgeCheck,
+      label: "Synced Successfully",
+      subtitle: "Users synced successfully",
+      value: String(successfulResults.length)
+    },
+    {
+      accent: "bg-[#F59E0B]/18 text-[#F59E0B]",
+      icon: Calendar,
+      label: "Already Exists",
+      subtitle: "Users already up to date",
+      value: String(existingResults.length)
+    },
+    {
+      accent: "bg-[#FF4D6D]/18 text-[#FF4D6D]",
+      icon: X,
+      label: "Failed",
+      subtitle: "Users failed to sync",
+      value: String(failedResults.length)
+    }
+  ];
+  const syncResultGroups: SyncResultGroup[] = [
+    {
+      accent: "border-[#00E7B0]/42 bg-[#00E7B0]/[.035]",
+      icon: BadgeCheck,
+      iconClassName: "text-[#00E7B0]",
+      rows: successfulResults,
+      title: `Successfully Synced (${successfulResults.length})`
+    },
+    {
+      accent: "border-[#F59E0B]/42 bg-[#F59E0B]/[.035]",
+      icon: Calendar,
+      iconClassName: "text-[#F59E0B]",
+      rows: existingResults,
+      title: `Already Exists (${existingResults.length})`
+    },
+    {
+      accent: "border-[#FF4D6D]/42 bg-[#FF4D6D]/[.04]",
+      icon: X,
+      iconClassName: "text-[#FF4D6D]",
+      rows: failedResults,
+      title: `Failed to Sync (${failedResults.length})`
+    }
+  ];
+  const visibleSyncResultGroups =
+    activeManualSyncTab === "all"
+      ? syncResultGroups
+      : syncResultGroups.filter((group) =>
+          activeManualSyncTab === "success"
+            ? group.title.startsWith("Successfully")
+            : activeManualSyncTab === "exists"
+              ? group.title.startsWith("Already")
+              : group.title.startsWith("Failed")
+        );
+  const tabs = [
+    { key: "all", label: `All Results (${manualSyncResults.length})` },
+    { key: "success", label: `Success (${successfulResults.length})` },
+    { key: "exists", label: `Already Exists (${existingResults.length})` },
+    { key: "failed", label: `Failed (${failedResults.length})` }
+  ] as const;
+
+  async function runManualUserSync(employeeIds: string[]) {
+    if (!employeeIds.length || isManualSyncing) {
+      return;
+    }
+
+    setIsManualSyncing(true);
+    setManualSyncResults([]);
+    setManualSyncStartedTotal(employeeIds.length);
+    setManualSyncCompletedAt("");
+    const startedAt = Date.now();
+    setManualSyncStartedAt(startedAt);
+    setManualSyncElapsedMs(0);
+    setActiveManualSyncTab("all");
+
+    for (let index = 0; index < employeeIds.length; index += 1) {
+      const employeeId = employeeIds[index];
+      setManualSyncMessage(
+        `Syncing ${index + 1} of ${employeeIds.length}: ${employeeId}`
+      );
+
+      try {
+        const response = await fetch("/api/student/manual-user-sync", {
+          body: JSON.stringify({ employeeId }),
+          headers: {
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        });
+        const result = (await response.json().catch(() => null)) as {
+          message?: string;
+          success?: boolean;
+        } | null;
+        const message = result?.message || "User sync failed.";
+        const success = Boolean(response.ok && result?.success);
+
+        setManualSyncResults((currentResults) => [
+          ...currentResults,
+          {
+            employeeId,
+            message,
+            status: classifyManualSyncResult(success, message),
+            syncedAt: formatManualSyncDate(new Date())
+          }
+        ]);
+      } catch {
+        setManualSyncResults((currentResults) => [
+          ...currentResults,
+          {
+            employeeId,
+            message: "Unable to connect to manual user sync API.",
+            status: "failed",
+            syncedAt: formatManualSyncDate(new Date())
+          }
+        ]);
+      }
+    }
+
+    const completedAt = formatManualSyncDate(new Date());
+    setManualSyncCompletedAt(completedAt);
+    setManualSyncElapsedMs(Date.now() - startedAt);
+    setManualSyncMessage(`Sync process completed for ${employeeIds.length} IDs.`);
+    setIsManualSyncing(false);
+  }
+
+  async function handleManualUserSync() {
+    await runManualUserSync(parsedEmployeeIds);
+  }
+
+  async function handleBackendTableUserSync() {
+    if (isManualSyncing) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    setIsManualSyncing(true);
+    setManualSyncResults([]);
+    setManualSyncStartedTotal(0);
+    setManualSyncCompletedAt("");
+    setManualSyncStartedAt(startedAt);
+    setManualSyncElapsedMs(0);
+    setActiveManualSyncTab("all");
+    setManualSyncMessage("Starting backend table users sync...");
+
+    try {
+      const response = await fetch("/api/student/table-user-sync", {
+        method: "POST"
+      });
+      const result = (await response.json().catch(() => null)) as {
+        data?: string;
+        message?: string;
+        success?: boolean;
+      } | null;
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "Backend table users sync failed.");
+      }
+
+      const parsedResults = parseTableUserSyncData(result.data || "");
+      setManualSyncStartedTotal(parsedResults.length);
+      setManualSyncResults(parsedResults);
+      setManualSyncMessage(
+        `${result.message || "Users sync completed."} Parsed ${parsedResults.length} records.`
+      );
+    } catch (error) {
+      setManualSyncResults([]);
+      setManualSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to complete backend table users sync."
+      );
+    } finally {
+      setManualSyncCompletedAt(formatManualSyncDate(new Date()));
+      setManualSyncElapsedMs(Date.now() - startedAt);
+      setIsManualSyncing(false);
+    }
+  }
+
+  async function handleEmployeeExcelUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file || isManualSyncing) {
+      return;
+    }
+
+    try {
+      setManualSyncMessage(`Reading ${file.name}...`);
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        throw new Error("No worksheet found in the uploaded file.");
+      }
+
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(
+        workbook.Sheets[firstSheetName],
+        {
+          blankrows: false,
+          defval: "",
+          header: 1
+        }
+      );
+      const employeeIds = readEmployeeIdsFromWorksheetRows(rows);
+
+      if (!employeeIds.length) {
+        throw new Error("No employee IDs found in the uploaded file.");
+      }
+
+      setUploadedEmployeeFileName(file.name);
+      setEmployeeIdsInput(employeeIds.join("\n"));
+      setManualSyncMessage(
+        `Loaded ${employeeIds.length} employee IDs from ${file.name}. Starting sync...`
+      );
+      await runManualUserSync(employeeIds);
+    } catch (error) {
+      setManualSyncMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to read employee IDs from the uploaded file."
+      );
+    }
+  }
+
+  function handleClearManualSyncResults() {
+    setManualSyncResults([]);
+    setManualSyncMessage("");
+    setManualSyncCompletedAt("");
+    setManualSyncStartedAt(null);
+    setManualSyncElapsedMs(0);
+    setManualSyncStartedTotal(0);
+    setUploadedEmployeeFileName("");
+    setActiveManualSyncTab("all");
+  }
+
+  function handleExportManualSyncResults() {
+    if (!manualSyncResults.length) {
+      return;
+    }
+
+    const csvRows = [
+      ["Employee ID", "Status", "Message", "Synced At"],
+      ...manualSyncResults.map((result) => [
+        result.employeeId,
+        result.status,
+        result.message,
+        result.syncedAt
+      ])
+    ];
+    const csv = csvRows
+      .map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "manual-user-sync-results.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <>
+      <Card className="mt-8 rounded-[8px] border border-[#263852]/80 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.66))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.24)]">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,.9fr)]">
+          <div className="min-w-0">
+            <h2 className="text-[14px] font-bold text-white">Enter Employee IDs</h2>
+            <p className="mt-3 text-[12px] text-[#AFC0D9]">
+              Enter one or more employee IDs separated by comma, space or new line.
+            </p>
+            <label
+              className={cn(
+                "mt-4 flex min-h-[82px] cursor-pointer items-center gap-4 rounded-[8px] border border-dashed border-[#00E7B0]/32 bg-[#00E7B0]/[.035] p-4 transition hover:border-[#00E7B0]/58 hover:bg-[#00E7B0]/[.055]",
+                isManualSyncing && "pointer-events-none cursor-not-allowed opacity-60"
+              )}
+            >
+              <input
+                accept=".xlsx,.xls,.csv"
+                className="sr-only"
+                disabled={isManualSyncing}
+                onChange={handleEmployeeExcelUpload}
+                type="file"
+              />
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[8px] bg-[#00E7B0]/14 text-[#00E7B0]">
+                <Upload className="h-5 w-5" strokeWidth={2.8} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-bold text-white">
+                  Upload Excel Employee List
+                </span>
+                <span className="mt-1 block break-words text-[12px] leading-5 text-[#AFC0D9]">
+                  {uploadedEmployeeFileName
+                    ? `${uploadedEmployeeFileName} loaded`
+                    : "Use a sheet with an employee_id column. Sync starts automatically after upload."}
+                </span>
+              </span>
+            </label>
+            <div className="relative mt-3">
+              <textarea
+                className="min-h-[116px] w-full resize-none rounded-[7px] border border-[#263852] bg-[#061226]/72 p-4 pr-10 text-[13px] leading-6 text-white outline-none transition placeholder:text-[#8CA3C7] focus:border-[#00E7B0]/55 focus:shadow-[0_0_0_4px_rgba(0,231,176,.10)]"
+                onChange={(event) => setEmployeeIdsInput(event.target.value)}
+                placeholder={"183321, 183322, 183323\n183324 183325"}
+                value={employeeIdsInput}
+              />
+              <BadgeCheck className="absolute bottom-3 right-3 h-4 w-4 text-[#00E7B0]" />
+            </div>
+            <p className="mt-4 text-[12px] text-[#C7D2E4]">
+              Total IDs Entered: {parsedEmployeeIds.length}
+              {manualSyncStartedTotal > 0 ? ` - Processed: ${manualSyncResults.length} of ${manualSyncStartedTotal}` : ""}
+              {manualSyncStartedTotal > 0
+                ? ` - Time: ${formatSyncDuration(manualSyncElapsedMs)}`
+                : ""}
+            </p>
+          </div>
+
+          <div className="grid min-w-0 content-end gap-4">
+            <div className="rounded-[8px] border border-[#263852]/70 bg-[#08172B]/62 p-5">
+              <h3 className="text-[13px] font-bold text-white">Instructions</h3>
+              <ul className="mt-4 grid list-disc gap-3 pl-4 text-[12px] leading-5 text-[#AFC0D9]">
+                <li>You can enter multiple IDs separated by comma, space or new line.</li>
+                <li>Duplicate IDs will be ignored.</li>
+                <li>Large batches are processed one by one, so 1000+ IDs can continue safely.</li>
+              </ul>
+            </div>
+            <Button
+              className="h-11 w-full rounded-[6px] text-[13px]"
+              disabled={isManualSyncing || !parsedEmployeeIds.length}
+              onClick={handleManualUserSync}
+              type="button"
+            >
+              {isManualSyncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {isManualSyncing ? "Syncing Users" : "Sync Users"}
+            </Button>
+            <Button
+              className="h-11 w-full rounded-[6px] bg-gradient-to-r from-[#315EFF] to-[#252ACB] text-[13px] shadow-[0_0_34px_rgba(77,111,255,.22)]"
+              disabled={isManualSyncing}
+              onClick={handleBackendTableUserSync}
+              type="button"
+              variant="blue"
+            >
+              {isManualSyncing && !manualSyncStartedTotal ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              Auto Sync Backend Users
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <section className="mt-6 grid gap-5 sm:grid-cols-2 2xl:grid-cols-4">
+        {syncOverviewStats.map((stat) => {
+          const Icon = stat.icon;
+
+          return (
+            <Card
+              className="rounded-[8px] border border-[#263852]/70 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.62))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.18)]"
+              key={stat.label}
+            >
+              <div className="flex items-center gap-5">
+                <div className={cn("grid h-14 w-14 shrink-0 place-items-center rounded-full", stat.accent)}>
+                  <Icon className="h-6 w-6" strokeWidth={2.8} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[24px] font-bold leading-none text-white">{stat.value}</div>
+                  <div
+                    className={cn(
+                      "mt-2 text-[12px] font-bold",
+                      stat.label === "Total IDs" && "text-[#4D8DFF]",
+                      stat.label === "Synced Successfully" && "text-[#00E7B0]",
+                      stat.label === "Already Exists" && "text-[#F59E0B]",
+                      stat.label === "Failed" && "text-[#FF4D6D]"
+                    )}
+                  >
+                    {stat.label}
+                  </div>
+                  <div className="mt-2 text-[12px] text-[#C7D2E4]">{stat.subtitle}</div>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </section>
+
+      <Card className="mt-6 min-w-0 overflow-hidden rounded-[8px] border border-[#263852]/80 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.64))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.24)]">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-[16px] font-bold text-white">Sync Results</h2>
+            <p className="mt-3 text-[12px] text-[#AFC0D9]">
+              Results of the latest sync process.
+            </p>
+          </div>
+          <Button
+            className="h-10 rounded-[6px] px-4 text-[12px]"
+            onClick={handleClearManualSyncResults}
+            type="button"
+            variant="ghost"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Refresh Results
+          </Button>
+        </div>
+
+        <div className="mt-4 flex min-w-0 gap-6 overflow-x-auto border-b border-[#263852]">
+          {tabs.map((tab) => (
+            <button
+              className={cn(
+                "h-10 shrink-0 px-1 text-[13px] font-medium text-[#8CA3C7]",
+                activeManualSyncTab === tab.key &&
+                  "border-b-2 border-[#00E7B0] text-[#00E7B0]"
+              )}
+              key={tab.key}
+              onClick={() => setActiveManualSyncTab(tab.key)}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {manualSyncResults.length ? (
+          <div
+            className={cn(
+              "mt-4 grid min-w-0 gap-4",
+              activeManualSyncTab === "all"
+                ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+                : "grid-cols-1"
+            )}
+          >
+            {visibleSyncResultGroups.map((group, index) =>
+              activeManualSyncTab === "all" && index > 0 ? null : (
+                <SyncResultTable
+                  group={group}
+                  key={group.title}
+                  scrollRef={
+                    group.title.startsWith("Successfully")
+                      ? successResultsScrollRef
+                      : undefined
+                  }
+                />
+              )
+            )}
+            {activeManualSyncTab === "all" ? (
+              <div className="grid gap-4">
+                <SyncResultTable group={syncResultGroups[1]} />
+                <SyncResultTable group={syncResultGroups[2]} />
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-[8px] border border-[#263852] bg-[#07172D]/52 px-5 py-8 text-center text-[13px] text-[#8CA3C7]">
+            Enter employee IDs and start sync to view results here.
+          </div>
+        )}
+      </Card>
+
+      <section className="mt-5 flex flex-col gap-3 rounded-[8px] border border-[#263852]/80 bg-[rgba(8,20,39,.72)] px-5 py-4 text-[12px] text-[#AFC0D9] shadow-[inset_0_1px_0_rgba(255,255,255,.045)] sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Info className="h-4 w-4 text-[#4D8DFF]" strokeWidth={2.8} />
+          <span className="break-words">
+            {manualSyncMessage ||
+              (manualSyncCompletedAt
+                ? `Sync process completed on ${manualSyncCompletedAt}`
+                : "Sync process has not started yet.")}
+            {manualSyncStartedTotal > 0
+              ? ` Time taken: ${formatSyncDuration(manualSyncElapsedMs)}.`
+              : ""}
+          </span>
+        </div>
+        <Button
+          className="h-10 rounded-[6px] px-4 text-[12px]"
+          disabled={!manualSyncResults.length}
+          onClick={handleExportManualSyncResults}
+          type="button"
+          variant="ghost"
+        >
+          <Download className="h-4 w-4" />
+          Export Results
+        </Button>
+      </section>
+    </>
   );
 }
 
@@ -1565,7 +2321,6 @@ function PaymentLookupView() {
       );
     }
   }
-
   return (
     <div className="mt-8 grid gap-7">
       <section className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
@@ -6399,6 +7154,7 @@ export default function Home() {
   const isReciptsView = activeView === "Recipts";
   const isTransactionsView = activeView === "Table Lookup";
   const isSedPaymentsView = activeView === "SED Payments";
+  const isSyncUsersView = activeView === "Sync Users";
   const isStudentsView = activeView === "Students";
   const isStudentBookListView = activeView === "Book Lists";
   const isUniformListsView = activeView === "Uniform Lists";
@@ -6410,6 +7166,8 @@ export default function Home() {
       ? "Table Lookup"
     : isSedPaymentsView
       ? "SED Payments"
+    : isSyncUsersView
+      ? "Sync Users"
       : isUniformListsView
         ? "Uniform Lists"
       : isStudentBookListView
@@ -6427,6 +7185,8 @@ export default function Home() {
       ? "View and search all payment transactions across different tables."
     : isSedPaymentsView
       ? "View all successful SED (Student Education Diagnostics) Transaction payments."
+    : isSyncUsersView
+      ? "Sync users from external system by entering employee IDs."
       : isUniformListsView
         ? "View uniform kits and products available for the selected student."
       : isStudentBookListView
@@ -6444,6 +7204,8 @@ export default function Home() {
       ? "TABLE LOOKUP"
     : isSedPaymentsView
       ? "FEE PAYMENTS"
+    : isSyncUsersView
+      ? "USER MANAGEMENT"
       : isUniformListsView
         ? "STUDENTS > UNIFORM LISTS"
       : isStudentBookListView
@@ -6875,7 +7637,7 @@ export default function Home() {
         onViewChange={setActiveView}
         role={dashboardRole}
       />
-      <section className="relative min-h-screen px-3 pb-5 pt-[112px] sm:px-6 lg:px-8 xl:ml-[280px] xl:px-10 xl:py-8">
+      <section className="relative min-h-screen px-3 pb-5 pt-[112px] sm:px-6 lg:px-8 xl:ml-[304px] xl:px-10 xl:py-8">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_3%,rgba(0,231,176,.10),transparent_24%),radial-gradient(circle_at_80%_4%,rgba(77,111,255,.08),transparent_24%)]" />
         <div className="relative z-10 min-w-0 max-w-full">
         <MobileHeader onMenuOpen={() => setIsMobileMenuOpen(true)} />
@@ -6937,6 +7699,8 @@ export default function Home() {
           <TransactionsView />
         ) : isSedPaymentsView ? (
           <SedPaymentsView />
+        ) : isSyncUsersView ? (
+          <SyncUsersView />
         ) : isStudentsView ? (
           <StudentsView />
         ) : isStudentBookListView ? (
@@ -7249,3 +8013,4 @@ export default function Home() {
     </main>
   );
 }
+

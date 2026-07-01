@@ -17,11 +17,11 @@ const buttonVariants = cva(
       },
       variant: {
         default:
-          "bg-gradient-to-r from-[#00E7B0] to-[#008E78] text-white shadow-[0_0_40px_rgba(0,231,176,.22)] hover:-translate-y-0.5 hover:shadow-[0_0_48px_rgba(0,231,176,.34)]",
+          "bg-gradient-to-r from-[#00E7B0] to-[#008E78] text-white shadow-[0_0_40px_rgba(0,231,176,.22)] hover:shadow-[0_0_48px_rgba(0,231,176,.34)]",
         blue:
-          "bg-gradient-to-r from-[#4D6FFF] to-[#252ACB] text-white shadow-[0_0_40px_rgba(77,111,255,.24)] hover:-translate-y-0.5 hover:shadow-[0_0_48px_rgba(77,111,255,.34)]",
+          "bg-gradient-to-r from-[#4D6FFF] to-[#252ACB] text-white shadow-[0_0_40px_rgba(77,111,255,.24)] hover:shadow-[0_0_48px_rgba(77,111,255,.34)]",
         ghost:
-          "border border-white/10 bg-[#061226]/70 text-white hover:-translate-y-0.5 hover:border-[#00E7B0]/30 hover:bg-[#0A1B35]",
+          "border border-white/10 bg-[#061226]/70 text-white hover:border-[#00E7B0]/30 hover:bg-[#0A1B35]",
         sidebar:
           "justify-start rounded-[14px] bg-transparent px-4 text-white/84 shadow-none hover:scale-[1.02] hover:bg-[#00E7B0]/10 hover:text-white"
       }
