@@ -3,7 +3,7 @@ import DisableInspect from "@/components/DisableInspect";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Wizklub Payment Dashboard",
+  title: "PaySync Dashboard",
   description: "Payment lookup and transaction verification dashboard"
 };
 

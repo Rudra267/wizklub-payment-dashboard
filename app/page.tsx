@@ -16,6 +16,8 @@ import {
   Compass,
   Copy,
   CreditCard,
+  Database,
+  DatabaseSearch,
   Download,
   Eye,
   EyeOff,
@@ -39,7 +41,9 @@ import {
   ShieldCheck,
   Shirt,
   ShoppingBag,
+  GitBranch,
   Truck,
+  Trash2,
   Upload,
   UserRound,
   UserRoundSearch,
@@ -76,6 +80,8 @@ type ActiveView =
   | "Recipts"
   | "Uniform Receipts"
   | "SED Payments"
+  | "Sync Master"
+  | "Sync Student"
   | "Sync Users"
   | "Table Lookup"
   | "Students"
@@ -101,9 +107,11 @@ const navItems = [
   { icon: LayoutDashboard, label: "Wizklub Payments" },
   { icon: CreditCard, label: "Receipt Updates" },
   { icon: FileText, label: "Uniform Receipts" },
-  { badge: "NEW", icon: Landmark, label: "SED Payments" },
+  { icon: Landmark, label: "SED Payments" },
+  { badge: "NEW", icon: RefreshCcw, label: "Sync Master" },
+  { badge: "NEW", icon: GraduationCap, label: "Sync Student" },
   { badge: "NEW", icon: UserRoundSearch, label: "Sync Users" },
-  { icon: RefreshCcw, label: "Table Lookup" },
+  { icon: DatabaseSearch, label: "Table Lookup" },
   { icon: BarChart3, label: "Reports" },
   {
     children: [
@@ -126,6 +134,8 @@ function canAccessView(role: DashboardRole | null, label: string) {
       label === "Recipts" ||
       label === "Uniform Receipts" ||
       label === "SED Payments" ||
+      label === "Sync Master" ||
+      label === "Sync Student" ||
       label === "Sync Users" ||
       label === "Table Lookup" ||
       label === "Students" ||
@@ -320,6 +330,7 @@ function normalizeAdmissionNo(value: string) {
 
 const studentAdmissionStorageKey = "wizklub_student_admission_no";
 const dashboardLoginStorageKey = "wizklub_dashboard_logged_in";
+const transactionLookupStorageKey = "paysync_transaction_lookup_state";
 const expiredSessionMessage = "Your login session expired. Please login again.";
 
 function readStoredAdmissionNo() {
@@ -638,6 +649,27 @@ function LogoMark() {
   );
 }
 
+function SidebarScrollPill({
+  direction,
+  onClick
+}: {
+  direction: "down" | "up";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="mx-2 mt-1 flex shrink-0 items-center justify-center gap-1.5 py-1 text-[10px] font-medium text-[#00E7B0]/78 transition hover:text-[#00E7B0] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+      onClick={onClick}
+      type="button"
+    >
+      <ChevronDown
+        className={cn("h-3 w-3 transition", direction === "up" && "rotate-180")}
+      />
+      {direction === "down" ? "Scroll down for more" : "Scroll up for more"}
+    </button>
+  );
+}
+
 function Sidebar({
   activeView,
   onViewChange,
@@ -647,11 +679,30 @@ function Sidebar({
   onViewChange: (view: ActiveView) => void;
   role: DashboardRole | null;
 }) {
+  const navRef = useRef<HTMLElement | null>(null);
+  const [scrollHintDirection, setScrollHintDirection] = useState<"down" | "up" | null>(
+    null
+  );
   const [isStudentsOpen, setIsStudentsOpen] = useState(
     activeView === "Students" ||
       activeView === "Book Lists" ||
       activeView === "Uniform Lists"
   );
+  const updateScrollHint = () => {
+    const nav = navRef.current;
+
+    if (!nav || nav.scrollHeight <= nav.clientHeight + 4) {
+      setScrollHintDirection(null);
+      return;
+    }
+
+    const canScrollDown = nav.scrollTop + nav.clientHeight < nav.scrollHeight - 4;
+    setScrollHintDirection(canScrollDown ? "down" : "up");
+  };
+
+  useEffect(() => {
+    updateScrollHint();
+  }, [activeView, isStudentsOpen]);
 
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-[304px] overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#02111D] via-[#021725] to-[#041E33] p-4 text-white shadow-[24px_0_70px_rgba(0,0,0,.34)] xl:flex xl:flex-col">
@@ -660,7 +711,11 @@ function Sidebar({
           <LogoMark />
         </div>
 
-        <nav className="mt-8 grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[760px]:mt-4 max-[760px]:gap-1.5">
+        <nav
+          className="mt-8 grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[760px]:mt-4 max-[760px]:gap-1.5"
+          onScroll={updateScrollHint}
+          ref={navRef}
+        >
           {navItems.map((item) => {
             const Icon = item.icon;
             const children = "children" in item ? item.children ?? [] : [];
@@ -759,6 +814,17 @@ function Sidebar({
             );
           })}
         </nav>
+        {scrollHintDirection ? (
+          <SidebarScrollPill
+            direction={scrollHintDirection}
+            onClick={() =>
+              navRef.current?.scrollBy({
+                behavior: "smooth",
+                top: scrollHintDirection === "down" ? 180 : -180
+              })
+            }
+          />
+        ) : null}
 
         <div className="mt-4 shrink-0 rounded-[10px] border border-[#00E7B0]/14 bg-[rgba(6,18,38,.66)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_0_32px_rgba(0,231,176,.06)] backdrop-blur-xl max-[760px]:hidden">
           <div className="flex items-center gap-3">
@@ -836,11 +902,34 @@ function MobileSidebar({
   onViewChange: (view: ActiveView) => void;
   role: DashboardRole | null;
 }) {
+  const navRef = useRef<HTMLElement | null>(null);
+  const [scrollHintDirection, setScrollHintDirection] = useState<"down" | "up" | null>(
+    null
+  );
   const [isStudentsOpen, setIsStudentsOpen] = useState(
     activeView === "Students" ||
       activeView === "Book Lists" ||
       activeView === "Uniform Lists"
   );
+  const updateScrollHint = () => {
+    const nav = navRef.current;
+
+    if (!nav || nav.scrollHeight <= nav.clientHeight + 4) {
+      setScrollHintDirection(null);
+      return;
+    }
+
+    const canScrollDown = nav.scrollTop + nav.clientHeight < nav.scrollHeight - 4;
+    setScrollHintDirection(canScrollDown ? "down" : "up");
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    updateScrollHint();
+  }, [activeView, isOpen, isStudentsOpen]);
 
   return (
     <AnimatePresence>
@@ -877,7 +966,11 @@ function MobileSidebar({
                 </Button>
               </div>
 
-              <nav className="mt-8 grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[760px]:mt-4 max-[760px]:gap-1.5">
+              <nav
+                className="mt-8 grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[760px]:mt-4 max-[760px]:gap-1.5"
+                onScroll={updateScrollHint}
+                ref={navRef}
+              >
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const children = "children" in item ? item.children ?? [] : [];
@@ -977,6 +1070,17 @@ function MobileSidebar({
                   );
                 })}
               </nav>
+              {scrollHintDirection ? (
+                <SidebarScrollPill
+                  direction={scrollHintDirection}
+                  onClick={() =>
+                    navRef.current?.scrollBy({
+                      behavior: "smooth",
+                      top: scrollHintDirection === "down" ? 180 : -180
+                    })
+                  }
+                />
+              ) : null}
 
               <div className="mt-4 shrink-0 rounded-[10px] border border-[#00E7B0]/14 bg-[rgba(6,18,38,.66)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_0_32px_rgba(0,231,176,.06)] backdrop-blur-xl max-[700px]:hidden">
                 <div className="flex items-center gap-3">
@@ -1197,6 +1301,926 @@ function SyncResultTable({
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+type SyncSectionResult = {
+  action: string;
+  message: string;
+  records: number;
+  status: "success" | "failed";
+  syncType: string;
+  syncedAt: string;
+  title: string;
+};
+
+type MasterDataSection = {
+  label: string;
+  type: string;
+};
+
+function createSyncSectionResult({
+  data,
+  message,
+  syncType,
+  success,
+  title
+}: {
+  data: string;
+  message: string;
+  syncType: string;
+  success: boolean;
+  title?: string;
+}): SyncSectionResult {
+  const normalizedData = data.replace(/\s+/g, " ").trim();
+  const recordsMatch = normalizedData.match(/Sync Records\s*:\s*(\d+)/i);
+  const dateMatch = normalizedData.match(/date\s*==\s*(.+)$/i);
+  const titleFromData = normalizedData.includes(":")
+    ? normalizedData.split(":")[0]?.trim()
+    : "";
+  const syncedAt = dateMatch?.[1]?.trim() || formatManualSyncDate(new Date());
+
+  return {
+    action: "View",
+    message: normalizedData || message,
+    records: recordsMatch ? Number(recordsMatch[1]) : 0,
+    status: success ? "success" : "failed",
+    syncType,
+    syncedAt,
+    title:
+      title ||
+      (syncType === "branch_orientation"
+        ? "Branch Wise Orientation Sync"
+        : titleFromData || toTitleCase(syncType.replace(/_/g, " ")))
+  };
+}
+
+function toTitleCase(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function SyncSectionsView() {
+  const masterDataSections: MasterDataSection[] = [
+    { label: "States", type: "states" },
+    { label: "Cities", type: "cities" },
+    { label: "Entity", type: "entity" },
+    { label: "Zones", type: "zones" },
+    { label: "Boards", type: "boards" },
+    { label: "Schools", type: "schools" },
+    { label: "Academic Year", type: "academic_year" },
+    { label: "Academics", type: "academics" },
+    { label: "School Classes", type: "school_classes" },
+    { label: "Orientations", type: "orientations" },
+    { label: "Student Type", type: "student_type" },
+    { label: "Gender", type: "gender" }
+  ];
+  const [results, setResults] = useState<SyncSectionResult[]>([]);
+  const [syncingAction, setSyncingAction] = useState<"branch" | "master" | null>(null);
+  const [syncingMasterType, setSyncingMasterType] = useState("");
+  const [syncMessage, setSyncMessage] = useState("Your data is safe and secure with us.");
+  const syncingMasterSection = masterDataSections.find(
+    (section) => section.type === syncingMasterType
+  );
+
+  function upsertSyncSectionResult(result: SyncSectionResult) {
+    setResults((currentResults) => [
+      result,
+      ...currentResults.filter((row) => row.syncType !== result.syncType)
+    ]);
+  }
+
+  async function handleBranchOrientationSync() {
+    setSyncingAction("branch");
+    setSyncMessage("Syncing branch wise orientations...");
+
+    try {
+      const response = await fetch("/api/sync-sections/branch-wise-orientations", {
+        method: "POST"
+      });
+      const result = (await response.json().catch(() => null)) as {
+        data?: string;
+        message?: string;
+        success?: boolean;
+      } | null;
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "Branch wise orientations sync failed.");
+      }
+
+      const branchResult = createSyncSectionResult({
+        data: result.data || "",
+        message: result.message || "Branch wise orientations sync completed successfully.",
+        syncType: "branch_orientation",
+        success: true
+      });
+
+      upsertSyncSectionResult(branchResult);
+      setSyncMessage(result.message || "Branch wise orientations sync completed successfully.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Branch wise orientations sync failed.";
+      const failedResult = createSyncSectionResult({
+        data: "",
+        message,
+        syncType: "branch_orientation",
+        success: false
+      });
+
+      upsertSyncSectionResult(failedResult);
+      setSyncMessage(message);
+    } finally {
+      setSyncingAction(null);
+    }
+  }
+
+  async function runMasterDataSectionSync(section: MasterDataSection) {
+    const response = await fetch("/api/sync-sections/master-data", {
+      body: JSON.stringify({ type: section.type }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const result = (await response.json().catch(() => null)) as {
+      data?: string;
+      message?: string;
+      success?: boolean;
+      type?: string;
+    } | null;
+
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.message || `${section.label} sync failed.`);
+    }
+
+    return createSyncSectionResult({
+      data: result.data || "",
+      message: result.message || `${section.label} sync completed successfully.`,
+      syncType: result.type || section.type,
+      success: true,
+      title: section.label
+    });
+  }
+
+  async function handleSingleMasterDataSync(section: MasterDataSection) {
+    setSyncingAction("master");
+    setSyncingMasterType(section.type);
+    setSyncMessage(`Syncing ${section.label}...`);
+
+    try {
+      const sectionResult = await runMasterDataSectionSync(section);
+      upsertSyncSectionResult(sectionResult);
+      setSyncMessage(`${section.label} sync completed successfully.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : `${section.label} sync failed.`;
+      const failedResult = createSyncSectionResult({
+        data: "",
+        message,
+        syncType: section.type,
+        success: false,
+        title: section.label
+      });
+
+      upsertSyncSectionResult(failedResult);
+      setSyncMessage(message);
+    } finally {
+      setSyncingAction(null);
+      setSyncingMasterType("");
+    }
+  }
+
+  async function handleMasterDataSync() {
+    setSyncingAction("master");
+    setSyncMessage("Syncing master data sections...");
+
+    const syncedResults: SyncSectionResult[] = [];
+
+    for (const [index, section] of masterDataSections.entries()) {
+      setSyncingMasterType(section.type);
+      setSyncMessage(
+        `Syncing ${section.label} (${index + 1} of ${masterDataSections.length})...`
+      );
+
+      try {
+        const sectionResult = await runMasterDataSectionSync(section);
+        syncedResults.push(sectionResult);
+        upsertSyncSectionResult(sectionResult);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : `${section.label} sync failed.`;
+
+        const failedResult = createSyncSectionResult({
+          data: "",
+          message,
+          syncType: section.type,
+          success: false,
+          title: section.label
+        });
+
+        syncedResults.push(failedResult);
+        upsertSyncSectionResult(failedResult);
+      }
+    }
+
+    setSyncingAction(null);
+    setSyncingMasterType("");
+    setSyncMessage(
+      `Master data sync completed. Processed ${syncedResults.length} section${
+        syncedResults.length === 1 ? "" : "s"
+      }.`
+    );
+  }
+
+  function handleRefreshResults() {
+    setSyncMessage(
+      results.length
+        ? "Latest sync results are already shown."
+        : "No sync results yet. Run a sync to view results here."
+    );
+  }
+
+  function handleClearResults() {
+    setResults([]);
+    setSyncMessage("Sync results cleared.");
+  }
+
+  return (
+    <div className="mt-8 grid gap-5">
+      <Card className="rounded-[8px] border border-[#263852]/80 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.64))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.24)]">
+        <div>
+          <h2 className="text-[16px] font-bold text-white">Sync Options</h2>
+          <p className="mt-2 text-[12px] text-[#AFC0D9]">
+            Choose the section you want to sync with the external system.
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(280px,.34fr)_minmax(0,1fr)]">
+          <section className="rounded-[8px] border border-[#263852]/80 bg-[#07172D]/56 p-5">
+            <div className="flex items-start gap-4">
+              <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[#7C3AED]/72 text-white shadow-[0_0_28px_rgba(124,58,237,.28)]">
+                <GitBranch className="h-6 w-6" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-[14px] font-bold text-white">
+                  Branch Wise Orientation Sync
+                </h3>
+                <p className="mt-3 text-[12px] leading-5 text-[#AFC0D9]">
+                  Sync branch wise orientation details from external system.
+                </p>
+              </div>
+            </div>
+            <Button
+              className="mt-9 h-11 w-full rounded-[6px] bg-gradient-to-r from-[#6D35C7] to-[#4D248F] text-[13px] shadow-[0_0_34px_rgba(124,58,237,.22)]"
+              disabled={syncingAction !== null}
+              onClick={handleBranchOrientationSync}
+              type="button"
+            >
+              {syncingAction === "branch" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              Sync Branch Orientations
+            </Button>
+          </section>
+
+          <section className="rounded-[8px] border border-[#263852]/80 bg-[#07172D]/42 p-5">
+            <h3 className="text-[14px] font-bold text-white">Master Data Sync</h3>
+            <p className="mt-2 text-[12px] text-[#AFC0D9]">
+              Sync all master data sections.
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+              {masterDataSections.map((section) => (
+                <button
+                  className="flex h-12 min-w-0 items-center gap-3 rounded-[6px] border border-[#263852] bg-[#061226]/72 px-4 text-left text-[12px] font-bold text-white transition hover:border-[#00E7B0]/42 hover:bg-[#00E7B0]/[.045] disabled:pointer-events-none disabled:opacity-60"
+                  disabled={syncingAction !== null}
+                  key={section.type}
+                  onClick={() => handleSingleMasterDataSync(section)}
+                  title={`Sync ${section.label} using type=${section.type}`}
+                  type="button"
+                >
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] bg-[#00E7B0]/10 text-[#00E7B0]">
+                    {syncingMasterType === section.type ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Database className="h-3.5 w-3.5" />
+                    )}
+                  </span>
+                  <span className="truncate">
+                    {syncingMasterType === section.type
+                      ? `Syncing ${section.label}`
+                      : section.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <Button
+              className="mt-5 h-11 w-full rounded-[6px] text-[13px]"
+              disabled={syncingAction !== null}
+              onClick={handleMasterDataSync}
+              type="button"
+            >
+              {syncingAction === "master" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              {syncingMasterSection
+                ? `Syncing ${syncingMasterSection.label}`
+                : "Sync Master Data"}
+            </Button>
+          </section>
+        </div>
+      </Card>
+
+      <Card className="min-w-0 overflow-hidden rounded-[8px] border border-[#263852]/80 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.64))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.24)]">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-[16px] font-bold text-white">Sync Results</h2>
+            <p className="mt-3 text-[12px] text-[#AFC0D9]">
+              View the latest sync results and status of each section.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              className="h-10 rounded-[6px] px-4 text-[12px]"
+              onClick={handleRefreshResults}
+              type="button"
+              variant="ghost"
+            >
+              <RefreshCcw className="h-4 w-4" />
+              Refresh Results
+            </Button>
+            <Button
+              className="h-10 rounded-[6px] px-4 text-[12px]"
+              onClick={handleClearResults}
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear Results
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-[8px] border border-[#263852]/70">
+          <table className="w-full min-w-[1060px] border-collapse text-left text-[12px]">
+            <thead className="bg-[#0A1B35]/86 text-white">
+              <tr>
+                {["#", "Sync Type", "Status", "Message", "Type", "Records", "Sync Date & Time", "Action"].map(
+                  (heading) => (
+                    <th className="px-4 py-3 font-bold" key={heading}>
+                      {heading}
+                    </th>
+                  )
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#263852]/64">
+              {results.length ? (
+                results.map((result, index) => (
+                  <tr className="bg-[#07172D]/38 text-[#D9E4F5]" key={result.syncType}>
+                    <td className="px-4 py-3">{index + 1}</td>
+                    <td className="px-4 py-3 font-semibold text-white">{result.title}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-[5px] px-2 py-1 text-[11px] font-bold",
+                          result.status === "success"
+                            ? "bg-[#00E7B0]/14 text-[#00E7B0]"
+                            : "bg-[#FF4D6D]/18 text-[#FF6B86]"
+                        )}
+                      >
+                        {result.status === "success" ? "Success" : "Failed"}
+                      </span>
+                    </td>
+                    <td className="max-w-[480px] px-4 py-3 text-[#C7D2E4]">
+                      {result.message}
+                    </td>
+                    <td className="px-4 py-3 text-[#C7D2E4]">{result.syncType}</td>
+                    <td className="px-4 py-3 text-[#C7D2E4]">{result.records}</td>
+                    <td className="px-4 py-3 text-[#C7D2E4]">{result.syncedAt}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        className="inline-flex h-7 items-center gap-1.5 rounded-[5px] border border-[#00E7B0]/28 px-2.5 text-[11px] font-bold text-[#00E7B0] transition hover:bg-[#00E7B0]/10"
+                        type="button"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        {result.action}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-4 py-8 text-center text-[#8CA3C7]" colSpan={8}>
+                    No sync results yet. Run a section sync to view results here.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-4 text-[12px] text-[#C7D2E4]">
+          Showing 1 to {results.length} of {results.length} results
+        </p>
+      </Card>
+
+    </div>
+  );
+}
+
+type StudentSyncMode = "bulk" | "missed";
+
+type StudentSyncResult = {
+  action: string;
+  message: string;
+  status: "success" | "failed" | "partial";
+  syncType: string;
+  syncedAt: string;
+};
+
+function readStudentSyncSectionMessage(
+  data: unknown,
+  key: "student_history" | "students"
+) {
+  if (!data || typeof data !== "object" || !(key in data)) {
+    return "";
+  }
+
+  const section = (data as Record<typeof key, unknown>)[key];
+
+  if (section && typeof section === "object" && "message" in section) {
+    return String((section as { message: unknown }).message || "").replace(/\s+/g, " ").trim();
+  }
+
+  return "";
+}
+
+function readSyncDateFromMessage(message: string) {
+  return message.match(/date\s*==\s*(.+)$/i)?.[1]?.trim() || "";
+}
+
+function readMissedStudentSyncMessage(data: unknown) {
+  if (!Array.isArray(data)) {
+    return "";
+  }
+
+  const firstResult = data[0];
+
+  if (firstResult && typeof firstResult === "object" && "message" in firstResult) {
+    return String((firstResult as { message: unknown }).message || "");
+  }
+
+  return "";
+}
+
+function readMissedStudentSyncStatus(data: unknown) {
+  if (!Array.isArray(data)) {
+    return true;
+  }
+
+  const firstResult = data[0];
+
+  if (firstResult && typeof firstResult === "object" && "status" in firstResult) {
+    return Boolean((firstResult as { status: unknown }).status);
+  }
+
+  return true;
+}
+
+function parseAdmissionNumbers(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => normalizeAdmissionNo(item))
+        .filter((item) => item !== "SCS")
+    )
+  );
+}
+
+function StudentSyncView() {
+  const [syncMode, setSyncMode] = useState<StudentSyncMode>("bulk");
+  const [missedAdmissionNo, setMissedAdmissionNo] = useState("");
+  const [studentSyncState, setStudentSyncState] = useState<LookupState>("idle");
+  const [studentSyncMessage, setStudentSyncMessage] = useState("");
+  const [studentSyncResults, setStudentSyncResults] = useState<StudentSyncResult[]>([]);
+
+  async function handleStudentSyncSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (syncMode === "bulk") {
+      setStudentSyncState("loading");
+      setStudentSyncMessage("Syncing students. Please wait.");
+
+      try {
+        const response = await fetch("/api/student/bulk-sync", {
+          method: "POST"
+        });
+        const result = (await response.json().catch(() => null)) as {
+          data?: unknown;
+          message?: string;
+          success?: boolean;
+        } | null;
+
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || "Bulk student sync failed.");
+        }
+
+        const studentsMessage = readStudentSyncSectionMessage(result.data, "students");
+        const historyMessage = readStudentSyncSectionMessage(result.data, "student_history");
+        const message = [studentsMessage, historyMessage].filter(Boolean).join(" | ");
+
+        setStudentSyncResults((currentResults) => [
+          {
+            action: "View",
+            message: message || result.message || "Student Sync Completed",
+            status: "success",
+            syncType: "bulk_student",
+            syncedAt:
+              readSyncDateFromMessage(studentsMessage) ||
+              readSyncDateFromMessage(historyMessage) ||
+              formatManualSyncDate(new Date())
+          },
+          ...currentResults
+        ]);
+        setStudentSyncState("success");
+        setStudentSyncMessage(result.message || "Student Sync Completed");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Bulk student sync failed.";
+
+        setStudentSyncResults((currentResults) => [
+          {
+            action: "View",
+            message,
+            status: "failed",
+            syncType: "bulk_student",
+            syncedAt: formatManualSyncDate(new Date())
+          },
+          ...currentResults
+        ]);
+        setStudentSyncState("error");
+        setStudentSyncMessage(message);
+      }
+
+      return;
+    }
+
+    const admissionNumbers = parseAdmissionNumbers(missedAdmissionNo);
+
+    if (!admissionNumbers.length) {
+      setStudentSyncState("error");
+      setStudentSyncMessage("Please enter at least one admission number.");
+      return;
+    }
+
+    setStudentSyncState("loading");
+    setStudentSyncMessage(
+      `Syncing ${admissionNumbers.length} missed student${
+        admissionNumbers.length === 1 ? "" : "s"
+      }. Please wait.`
+    );
+
+    const pendingRows: StudentSyncResult[] = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    function flushPendingRows() {
+      if (!pendingRows.length) {
+        return;
+      }
+
+      const rowsToAdd = pendingRows.splice(0, pendingRows.length);
+
+      setStudentSyncResults((currentResults) => [
+        ...rowsToAdd.reverse(),
+        ...currentResults
+      ]);
+    }
+
+    for (let index = 0; index < admissionNumbers.length; index += 1) {
+      const admissionNo = admissionNumbers[index];
+      setStudentSyncMessage(
+        `Syncing ${index + 1} of ${admissionNumbers.length}: ${admissionNo}`
+      );
+
+      try {
+        const response = await fetch("/api/student/missed-sync", {
+          body: JSON.stringify({ admissionNo }),
+          headers: {
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        });
+        const result = (await response.json().catch(() => null)) as {
+          data?: unknown;
+          message?: string;
+          success?: boolean;
+        } | null;
+
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || "Missed student sync failed.");
+        }
+
+        const studentStatus = readMissedStudentSyncStatus(result.data);
+        const rowMessage =
+          readMissedStudentSyncMessage(result.data) ||
+          result.message ||
+          "Missed student synced successfully.";
+
+        if (studentStatus) {
+          successCount += 1;
+        } else {
+          failedCount += 1;
+        }
+
+        pendingRows.push({
+          action: "View",
+          message: `${admissionNo}: ${rowMessage}`,
+          status: studentStatus ? "success" : "failed",
+          syncType: "missed_student",
+          syncedAt: formatManualSyncDate(new Date())
+        });
+      } catch (error) {
+        failedCount += 1;
+        pendingRows.push({
+          action: "View",
+          message: `${admissionNo}: ${
+            error instanceof Error ? error.message : "Missed student sync failed."
+          }`,
+          status: "failed",
+          syncType: "missed_student",
+          syncedAt: formatManualSyncDate(new Date())
+        });
+      }
+
+      if (pendingRows.length >= 25) {
+        flushPendingRows();
+      }
+    }
+
+    flushPendingRows();
+    setStudentSyncState(failedCount > 0 && successCount === 0 ? "error" : "success");
+    setStudentSyncMessage(
+      `Missed student sync completed. Success: ${successCount}, Failed: ${failedCount}.`
+    );
+  }
+
+  function handleClearStudentSyncResults() {
+    setStudentSyncResults([]);
+    setStudentSyncState("idle");
+    setStudentSyncMessage("");
+  }
+
+  function handleRefreshStudentSyncResults() {
+    setStudentSyncMessage(
+      studentSyncResults.length
+        ? "Latest student sync results are already shown."
+        : "No student sync results yet. Start a sync to view results here."
+    );
+  }
+
+  return (
+    <div className="mt-8 grid gap-5">
+      <Card className="rounded-[8px] border border-[#263852]/80 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.64))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.24)]">
+        <form
+          className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]"
+          onSubmit={handleStudentSyncSubmit}
+        >
+          <div className="grid min-w-0 content-between gap-5">
+            <div>
+            <h2 className="text-[16px] font-bold text-white">Sync Options</h2>
+            <p className="mt-2 text-[12px] text-[#AFC0D9]">
+              Choose the type of student sync you want to perform.
+            </p>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                {[
+                  {
+                    description: "Sync all updated students from the external system.",
+                    icon: UserRoundSearch,
+                    key: "bulk",
+                    label: "Bulk Student Sync"
+                  },
+                  {
+                    description: "Sync one or more missed students using admission numbers.",
+                    icon: UserRound,
+                    key: "missed",
+                    label: "Missed Student Sync"
+                  }
+                ].map((option) => {
+                  const Icon = option.icon;
+                  const selected = syncMode === option.key;
+
+                  return (
+                    <button
+                      className={cn(
+                        "relative flex min-h-[128px] items-center gap-4 rounded-[8px] border p-5 text-left transition",
+                        selected
+                          ? "border-[#00E7B0]/60 bg-[#00E7B0]/[.045]"
+                          : "border-[#263852] bg-[#061226]/56 hover:border-[#00E7B0]/32"
+                      )}
+                      key={option.key}
+                      onClick={() => setSyncMode(option.key as StudentSyncMode)}
+                      type="button"
+                    >
+                      <span
+                        className={cn(
+                          "grid h-14 w-14 shrink-0 place-items-center rounded-full",
+                          selected
+                            ? "bg-[#00E7B0]/14 text-[#00E7B0]"
+                            : "bg-[#7C3AED]/18 text-[#A78BFA]"
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[13px] font-bold text-white">
+                          {option.label}
+                        </span>
+                        <span className="mt-3 block text-[12px] leading-5 text-[#AFC0D9]">
+                          {option.description}
+                        </span>
+                      </span>
+                      {selected ? (
+                        <BadgeCheck className="absolute right-3 top-3 h-4 w-4 text-[#00E7B0]" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <Button
+              className="h-12 w-full rounded-[6px] text-[13px]"
+              disabled={studentSyncState === "loading"}
+              type="submit"
+            >
+              {studentSyncState === "loading" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              Start Student Sync
+            </Button>
+          </div>
+
+          <div className="rounded-[8px] border border-[#263852]/70 bg-[#08172B]/62 p-5">
+              <h3 className="text-[13px] font-bold text-white">Instructions</h3>
+              <ul className="mt-4 grid list-disc gap-3 pl-4 text-[12px] leading-5 text-[#AFC0D9]">
+                <li>Bulk Student Sync will fetch and sync all students updated in the external system.</li>
+                <li>Missed Student Sync accepts comma, space, or new-line separated admission numbers.</li>
+                <li>Student history will be synced automatically.</li>
+                <li>You do not need to provide any dates, limits or offsets.</li>
+              </ul>
+
+              {syncMode === "missed" ? (
+                <label className="mt-7 grid gap-2">
+                  <span className="text-[12px] font-bold text-white">
+                    Missed Student Admission Nos.
+                  </span>
+                  <textarea
+                    className="min-h-[132px] w-full resize-y rounded-[6px] border border-[#263852] bg-[#061226]/72 p-4 text-[13px] leading-6 text-white outline-none transition placeholder:text-[#8CA3C7] focus:border-[#00E7B0]/55 focus:shadow-[0_0_0_4px_rgba(0,231,176,.10)]"
+                    disabled={studentSyncState === "loading"}
+                    onChange={(event) => setMissedAdmissionNo(event.target.value)}
+                    placeholder={"SCS1766316, SCS1801305\nSCS1234567"}
+                    value={missedAdmissionNo}
+                  />
+                  <span className="text-[11px] leading-5 text-[#8CA3C7]">
+                    Add up to 1000+ admission numbers. They will be de-duplicated and synced one by one.
+                  </span>
+                </label>
+              ) : null}
+          </div>
+        </form>
+
+        {studentSyncMessage ? (
+          <div
+            className={cn(
+              "mt-5 rounded-[8px] border px-4 py-3 text-sm font-semibold",
+              studentSyncState === "success" &&
+                "border-[#00E7B0]/25 bg-[#00E7B0]/10 text-[#00E7B0]",
+              studentSyncState === "error" &&
+                "border-[#FF4D6D]/25 bg-[#FF4D6D]/10 text-[#FF4D6D]",
+              studentSyncState === "loading" &&
+                "border-[#4D6FFF]/25 bg-[#4D6FFF]/10 text-[#6F8BFF]",
+              studentSyncState === "idle" &&
+                "border-[#263852] bg-[#07172D]/62 text-[#AFC0D9]"
+            )}
+          >
+            {studentSyncMessage}
+          </div>
+        ) : null}
+      </Card>
+
+      <Card className="min-w-0 overflow-hidden rounded-[8px] border border-[#263852]/80 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.64))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_18px_46px_rgba(0,0,0,.24)]">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-[16px] font-bold text-white">Sync Results</h2>
+            <p className="mt-3 text-[12px] text-[#AFC0D9]">
+              View the latest student sync results and status.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              className="h-10 rounded-[6px] px-4 text-[12px]"
+              onClick={handleRefreshStudentSyncResults}
+              type="button"
+              variant="ghost"
+            >
+              <RefreshCcw className="h-4 w-4" />
+              Refresh Results
+            </Button>
+            <Button
+              className="h-10 rounded-[6px] px-4 text-[12px]"
+              onClick={handleClearStudentSyncResults}
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear Results
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-[8px] border border-[#263852]/70">
+          <table className="w-full min-w-[860px] border-collapse text-left text-[12px]">
+            <thead className="bg-[#0A1B35]/86 text-white">
+              <tr>
+                {["#", "Sync Type", "Status", "Message", "Synced At", "Action"].map(
+                  (heading) => (
+                    <th className="px-4 py-3 font-bold" key={heading}>
+                      {heading}
+                    </th>
+                  )
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#263852]/64">
+              {studentSyncResults.length ? (
+                studentSyncResults.map((result, index) => (
+                  <tr className="bg-[#07172D]/38 text-[#D9E4F5]" key={`${result.syncType}-${result.syncedAt}-${index}`}>
+                    <td className="px-4 py-3">{index + 1}</td>
+                    <td className="px-4 py-3 font-semibold text-white">
+                      {result.syncType === "bulk_student"
+                        ? "Bulk Student Sync"
+                        : "Missed Student Sync"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-[5px] px-2 py-1 text-[11px] font-bold",
+                          result.status === "success" &&
+                            "bg-[#00E7B0]/14 text-[#00E7B0]",
+                          result.status === "failed" &&
+                            "bg-[#FF4D6D]/18 text-[#FF6B86]",
+                          result.status === "partial" &&
+                            "bg-[#F59E0B]/18 text-[#F59E0B]"
+                        )}
+                      >
+                        {toTitleCase(result.status)}
+                      </span>
+                    </td>
+                    <td className="max-w-[520px] px-4 py-3 text-[#C7D2E4]">
+                      {result.message}
+                    </td>
+                    <td className="px-4 py-3 text-[#C7D2E4]">{result.syncedAt}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        className="inline-flex h-7 items-center gap-1.5 rounded-[5px] border border-[#00E7B0]/28 px-2.5 text-[11px] font-bold text-[#00E7B0] transition hover:bg-[#00E7B0]/10"
+                        type="button"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        {result.action}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-4 py-8 text-center text-[#8CA3C7]" colSpan={6}>
+                    No student sync results yet. Start a sync to view results here.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-4 text-[12px] text-[#C7D2E4]">
+          Showing {studentSyncResults.length ? 1 : 0} to {studentSyncResults.length} of{" "}
+          {studentSyncResults.length} results
+        </p>
+      </Card>
     </div>
   );
 }
@@ -3504,6 +4528,15 @@ function readNestedValue(source: unknown, keys: string[]): string {
   return "";
 }
 
+type StoredTransactionLookupState = {
+  detail: unknown;
+  lookupMessage: string;
+  lookupState: LookupState;
+  page: number;
+  searchId: string;
+  table: string;
+};
+
 function TransactionsView() {
   const [selectedTransactionTable, setSelectedTransactionTable] = useState(
     transactionTabs[0]?.table || "payments"
@@ -3515,6 +4548,7 @@ function TransactionsView() {
   const [transactionDetail, setTransactionDetail] = useState<unknown>(null);
   const [copiedTransactionValue, setCopiedTransactionValue] = useState("");
   const [transactionPage, setTransactionPage] = useState(1);
+  const [hasRestoredTransactionLookup, setHasRestoredTransactionLookup] = useState(false);
   const transactionRows = extractTransactionRecords(transactionDetail).map((record) =>
     normalizeTransactionRow(record)
   );
@@ -3527,6 +4561,77 @@ function TransactionsView() {
     (transactionPage - 1) * transactionRowsPerPage,
     transactionPage * transactionRowsPerPage
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storedValue = window.localStorage.getItem(transactionLookupStorageKey);
+
+    if (storedValue) {
+      try {
+        const storedState = JSON.parse(storedValue) as Partial<StoredTransactionLookupState>;
+        const storedTable =
+          typeof storedState.table === "string" &&
+          transactionTabs.some((tab) => tab.table === storedState.table)
+          ? storedState.table
+          : transactionTabs[0]?.table || "payments";
+
+        setSelectedTransactionTable(storedTable);
+        setTransactionSearchId(
+          typeof storedState.searchId === "string" ? storedState.searchId : ""
+        );
+        setTransactionLookupState(
+          storedState.lookupState === "success" ||
+            storedState.lookupState === "error"
+            ? storedState.lookupState
+            : "idle"
+        );
+        setTransactionLookupMessage(
+          typeof storedState.lookupMessage === "string" ? storedState.lookupMessage : ""
+        );
+        setTransactionDetail(storedState.detail ?? null);
+        setTransactionPage(
+          typeof storedState.page === "number" && Number.isFinite(storedState.page)
+            ? Math.max(1, storedState.page)
+            : 1
+        );
+      } catch {
+        window.localStorage.removeItem(transactionLookupStorageKey);
+      }
+    }
+
+    setHasRestoredTransactionLookup(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredTransactionLookup || typeof window === "undefined") {
+      return;
+    }
+
+    const stateToStore: StoredTransactionLookupState = {
+      detail: transactionDetail,
+      lookupMessage: transactionLookupMessage,
+      lookupState: transactionLookupState === "loading" ? "idle" : transactionLookupState,
+      page: transactionPage,
+      searchId: transactionSearchId,
+      table: selectedTransactionTable
+    };
+
+    window.localStorage.setItem(
+      transactionLookupStorageKey,
+      JSON.stringify(stateToStore)
+    );
+  }, [
+    hasRestoredTransactionLookup,
+    selectedTransactionTable,
+    transactionDetail,
+    transactionLookupMessage,
+    transactionLookupState,
+    transactionPage,
+    transactionSearchId
+  ]);
 
   async function handleCopyTransactionValue(value: string) {
     if (!value || value === "Not available") {
@@ -3879,6 +4984,8 @@ function StudentsView() {
   const [studentLookupState, setStudentLookupState] =
     useState<LookupState>("idle");
   const [studentLookupMessage, setStudentLookupMessage] = useState("");
+  const [studentSyncState, setStudentSyncState] = useState<LookupState>("idle");
+  const [studentSyncMessage, setStudentSyncMessage] = useState("");
   const [studentDetails, setStudentDetails] = useState<unknown>(null);
   const studentName =
     readNestedValue(studentDetails, [
@@ -4007,10 +5114,53 @@ function StudentsView() {
     }
   }
 
+  async function handleStudentDetailsSync() {
+    const admissionNo = writeStoredAdmissionNo(studentAdmissionNo);
+
+    if (!admissionNo.trim()) {
+      setStudentSyncState("error");
+      setStudentSyncMessage("Please enter an admission number.");
+      return;
+    }
+
+    setStudentAdmissionNo(admissionNo);
+    setStudentSyncState("loading");
+    setStudentSyncMessage("Syncing student details. Please wait.");
+
+    try {
+      const response = await fetch("/api/student/sync", {
+        body: JSON.stringify({ admissionNo }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result && typeof result.message === "string"
+            ? result.message
+            : "Student sync failed."
+        );
+      }
+
+      setStudentSyncState("success");
+      setStudentSyncMessage(result.message || "Student synced successfully.");
+    } catch (error) {
+      setStudentSyncState("error");
+      setStudentSyncMessage(
+        error instanceof Error ? error.message : "Student sync failed."
+      );
+    }
+  }
+
   function handleStudentDetailsClear() {
     setStudentAdmissionNo(writeStoredAdmissionNo("SCS"));
     setStudentLookupState("idle");
     setStudentLookupMessage("");
+    setStudentSyncState("idle");
+    setStudentSyncMessage("");
     setStudentDetails(null);
   }
 
@@ -4022,7 +5172,7 @@ function StudentsView() {
           <h2 className="text-[16px] font-bold text-white">Search Student</h2>
         </div>
         <form
-          className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px]"
+          className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_180px]"
           onSubmit={handleStudentDetailsLookup}
         >
           <label className="grid gap-2">
@@ -4053,7 +5203,21 @@ function StudentsView() {
           </Button>
           <Button
             className="mt-auto h-12 rounded-[6px]"
-            disabled={studentLookupState === "loading"}
+            disabled={studentSyncState === "loading" || studentLookupState === "loading"}
+            onClick={handleStudentDetailsSync}
+            type="button"
+            variant="blue"
+          >
+            {studentSyncState === "loading" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCcw className="h-4 w-4" />
+            )}
+            Sync Student
+          </Button>
+          <Button
+            className="mt-auto h-12 rounded-[6px]"
+            disabled={studentLookupState === "loading" || studentSyncState === "loading"}
             onClick={handleStudentDetailsClear}
             type="button"
             variant="ghost"
@@ -4075,6 +5239,21 @@ function StudentsView() {
             )}
           >
             {studentLookupMessage}
+          </div>
+        ) : null}
+        {studentSyncMessage ? (
+          <div
+            className={cn(
+              "mt-3 rounded-[8px] border px-4 py-3 text-sm font-semibold",
+              studentSyncState === "success" &&
+                "border-[#00E7B0]/25 bg-[#00E7B0]/10 text-[#00E7B0]",
+              studentSyncState === "error" &&
+                "border-[#FF4D6D]/25 bg-[#FF4D6D]/10 text-[#FF4D6D]",
+              studentSyncState === "loading" &&
+                "border-[#4D6FFF]/25 bg-[#4D6FFF]/10 text-[#6F8BFF]"
+            )}
+          >
+            {studentSyncMessage}
           </div>
         ) : null}
       </Card>
@@ -7149,6 +8328,8 @@ export default function Home() {
   const isReciptsView = activeView === "Recipts";
   const isTransactionsView = activeView === "Table Lookup";
   const isSedPaymentsView = activeView === "SED Payments";
+  const isSyncSectionsView = activeView === "Sync Master";
+  const isSyncStudentView = activeView === "Sync Student";
   const isSyncUsersView = activeView === "Sync Users";
   const isStudentsView = activeView === "Students";
   const isStudentBookListView = activeView === "Book Lists";
@@ -7161,6 +8342,10 @@ export default function Home() {
       ? "Table Lookup"
     : isSedPaymentsView
       ? "SED Payments"
+    : isSyncSectionsView
+      ? "Sync Master"
+    : isSyncStudentView
+      ? "Student Sync"
     : isSyncUsersView
       ? "Sync Users"
       : isUniformListsView
@@ -7180,6 +8365,10 @@ export default function Home() {
       ? "View and search all payment transactions across different tables."
     : isSedPaymentsView
       ? "View all successful SED (Student Education Diagnostics) Transaction payments."
+    : isSyncSectionsView
+      ? "Synchronize master data and other sections with external system."
+    : isSyncStudentView
+      ? "Sync student and related history data from the external system."
     : isSyncUsersView
       ? "Sync users from external system by entering employee IDs."
       : isUniformListsView
@@ -7199,6 +8388,10 @@ export default function Home() {
       ? "TABLE LOOKUP"
     : isSedPaymentsView
       ? "FEE PAYMENTS"
+    : isSyncSectionsView
+      ? "SYNC MASTER"
+    : isSyncStudentView
+      ? "STUDENT SYNC"
     : isSyncUsersView
       ? "USER MANAGEMENT"
       : isUniformListsView
@@ -7694,6 +8887,10 @@ export default function Home() {
           <TransactionsView />
         ) : isSedPaymentsView ? (
           <SedPaymentsView />
+        ) : isSyncSectionsView ? (
+          <SyncSectionsView />
+        ) : isSyncStudentView ? (
+          <StudentSyncView />
         ) : isSyncUsersView ? (
           <SyncUsersView />
         ) : isStudentsView ? (
@@ -8001,7 +9198,7 @@ export default function Home() {
             <LockKeyhole className="h-4 w-4 fill-[#00E7B0]/20 text-[#00E7B0]" strokeWidth={2.8} />
             <span>Your payment data is safe and secure with us.</span>
           </div>
-          <span>© 2026 Wizklub Payments. All rights reserved.</span>
+          <span>&copy; 2026 PaySync. All rights reserved.</span>
         </footer>
         </div>
       </section>
