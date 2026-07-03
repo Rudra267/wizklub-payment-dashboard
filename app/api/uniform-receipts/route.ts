@@ -11,10 +11,6 @@ type UniformPaymentsPayload = {
   status?: unknown;
 };
 
-type ReceiptPathPayload = {
-  receipt_path?: unknown;
-};
-
 type ZipEntry = {
   data: Buffer;
   name: string;
@@ -25,15 +21,20 @@ type ReceiptFailure = {
   transactionId: string;
 };
 
+type PdfDownloadResult = {
+  data: Buffer | null;
+  reason: string;
+};
+
 const DEFAULT_UNIFORM_PAYMENT_IDS_API =
   "https://api.srichaitanyaschool.net/v3/grievance-api/uniform-payments-bydates";
 const DEFAULT_UNIFORM_RECEIPT_API =
-  "http://192.168.0.6/varna_api/uniform_online_receipt_pdf.php";
+  "https://srichaitanyaschool.net/payments/download-receipt";
 const DEFAULT_UNIFORM_RECEIPT_LOOKUP_API =
   "https://srichaitanyaschool.net/uniform-payments/check-uniform-sales-payment-razorpay";
-const RECEIPT_TOKEN = "chaitanya";
 const DEFAULT_RECEIPT_FETCH_TIMEOUT_MS = 15_000;
-const DEFAULT_RECEIPT_DOWNLOAD_CONCURRENCY = 12;
+const DEFAULT_RECEIPT_DOWNLOAD_CONCURRENCY = 3;
+const DEFAULT_RECEIPT_DOWNLOAD_RETRIES = 2;
 
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index;
@@ -181,7 +182,7 @@ function extractTransactionIds(payload: UniformPaymentsPayload) {
   return Array.from(
     new Set(
       payload.data
-        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .map((item) => (typeof item === "string" ? normalizeTransactionId(item) : ""))
         .filter(Boolean)
     )
   );
@@ -271,23 +272,10 @@ async function mapWithConcurrency<T, U>(
 async function getReceiptPath(transactionId: string) {
   const receiptApiUrl =
     process.env.UNIFORM_RECEIPT_API_URL || DEFAULT_UNIFORM_RECEIPT_API;
-  const receiptUrl = new URL(receiptApiUrl);
-  receiptUrl.searchParams.set("token", process.env.UNIFORM_RECEIPT_TOKEN || RECEIPT_TOKEN);
-  receiptUrl.searchParams.set("online_transaction_no", transactionId);
+  const receiptUrl = receiptApiUrl.split("?")[0]?.replace(/\/$/, "") || DEFAULT_UNIFORM_RECEIPT_API;
+  const normalizedTransactionId = encodeURIComponent(normalizeTransactionId(transactionId));
 
-  const response = await fetchWithTimeout(receiptUrl, {
-    headers: {
-      Accept: "application/json"
-    },
-    method: "GET"
-  });
-  const payload = (await readJson(response)) as ReceiptPathPayload | null;
-
-  if (!response.ok || typeof payload?.receipt_path !== "string") {
-    return "";
-  }
-
-  return payload.receipt_path.trim();
+  return `${receiptUrl}?online_transaction_no=${normalizedTransactionId}&fee_type=Uniform+Fee`;
 }
 
 async function triggerUniformReceiptLookup(transactionId: string) {
@@ -311,19 +299,41 @@ async function triggerUniformReceiptLookup(transactionId: string) {
   };
 }
 
-async function downloadPdf(receiptPath: string) {
-  const response = await fetchWithTimeout(receiptPath, {
-    headers: {
-      Accept: "application/pdf,*/*"
-    },
-    method: "GET"
-  });
+async function downloadPdf(receiptPath: string): Promise<PdfDownloadResult> {
+  let failureReason = "PDF download failed";
 
-  if (!response.ok) {
-    return null;
+  for (let attempt = 0; attempt <= DEFAULT_RECEIPT_DOWNLOAD_RETRIES; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(receiptPath, {
+        cache: "no-store",
+        headers: {
+          Accept: "application/pdf,*/*",
+          Referer: "https://srichaitanyaschool.net/",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+        },
+        method: "GET"
+      });
+      const data = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get("content-type") || "";
+
+      if (response.ok && (contentType.includes("application/pdf") || data.subarray(0, 4).toString() === "%PDF")) {
+        return { data, reason: "" };
+      }
+
+      failureReason = response.ok
+        ? `Receipt URL returned ${contentType || "non-PDF content"}`
+        : `Receipt URL returned ${response.status}`;
+    } catch {
+      failureReason = "Receipt URL request failed";
+    }
+
+    if (attempt < DEFAULT_RECEIPT_DOWNLOAD_RETRIES) {
+      await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+    }
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  return { data: null, reason: failureReason };
 }
 
 async function createUniformReceiptZip(transactionIds: string[], label: string) {
@@ -357,16 +367,28 @@ async function createUniformReceiptZip(transactionIds: string[], label: string) 
         return;
       }
 
-      const pdf = await downloadPdf(receiptPath);
+      let pdf = await downloadPdf(receiptPath);
 
-      if (!pdf) {
-        failures.push({ reason: "PDF download failed", transactionId });
+      if (!pdf.data) {
+        const lookupResult = await triggerUniformReceiptLookup(transactionId).catch(
+          () => ({ receiptReference: "", success: false })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        pdf = await downloadPdf(receiptPath);
+
+        if (!pdf.data && lookupResult.receiptReference) {
+          receiptPath = await getReceiptPath(lookupResult.receiptReference);
+          pdf = await downloadPdf(receiptPath);
+        }
+      }
+
+      if (!pdf.data) {
+        failures.push({ reason: pdf.reason, transactionId });
         return;
       }
 
-      const pathName = new URL(receiptPath).pathname.split("/").pop();
-      const fileName = makeUniqueName(pathName || `${transactionId}.pdf`, usedNames);
-      entries.push({ data: pdf, name: fileName });
+      const fileName = makeUniqueName(`${normalizeTransactionId(transactionId)}.pdf`, usedNames);
+      entries.push({ data: pdf.data, name: fileName });
     } catch {
       failures.push({ reason: "failed", transactionId });
     }
@@ -413,6 +435,22 @@ function createZipResponse(zip: Buffer, fileName: string, failures: ReceiptFailu
       )
     }
   });
+}
+
+function formatReceiptFailureMessage(
+  fallbackMessage: string,
+  failures: ReceiptFailure[]
+) {
+  if (!failures.length) {
+    return fallbackMessage;
+  }
+
+  const sampleFailures = failures
+    .slice(0, 3)
+    .map((failure) => `${failure.transactionId}: ${failure.reason}`)
+    .join("; ");
+
+  return `${fallbackMessage} ${sampleFailures}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -471,7 +509,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           failures,
-          message: "No receipt PDFs could be downloaded for this date.",
+          message: formatReceiptFailureMessage(
+            "No receipt PDFs could be downloaded for this date.",
+            failures
+          ),
           success: false
         },
         { status: 502 }
@@ -521,7 +562,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           failures,
-          message: "No receipt PDFs could be downloaded for these transaction IDs.",
+          message: formatReceiptFailureMessage(
+            "No receipt PDFs could be downloaded for these transaction IDs.",
+            failures
+          ),
           success: false
         },
         { status: 502 }

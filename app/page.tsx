@@ -8855,27 +8855,10 @@ export default function Home() {
             </p>
           </div>
           <div className="flex min-w-0 flex-wrap gap-3">
-            {isPaymentLookupView ? (
-              <>
-                <div className="grid h-[54px] min-w-[112px] place-items-center rounded-[12px] border border-[#00E7B0]/20 bg-[#00E7B0]/7 px-5 text-sm font-semibold text-[#00E7B0] shadow-[0_0_34px_rgba(0,231,176,.12)]">
-                  {summary.totalRecords} Records
-                </div>
-                <Button onClick={handleLogout} type="button" variant="ghost">
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </Button>
-              </>
-            ) : (
-              <>
-                <div className="grid h-[54px] min-w-[112px] place-items-center rounded-[12px] border border-[#00E7B0]/20 bg-[#00E7B0]/7 px-5 text-sm font-semibold text-[#00E7B0] shadow-[0_0_34px_rgba(0,231,176,.12)]">
-                  {summary.totalRecords} Records
-                </div>
-                <Button onClick={handleLogout} type="button" variant="ghost">
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </Button>
-              </>
-            )}
+            <Button onClick={handleLogout} type="button" variant="ghost">
+              <LogOut className="h-4 w-4" />
+              Logout
+            </Button>
           </div>
         </header>
 
