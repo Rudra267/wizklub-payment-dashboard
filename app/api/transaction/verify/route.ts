@@ -38,6 +38,43 @@ function readSuccess(payload: unknown) {
   return false;
 }
 
+function readRazorpayStatusSuccess(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const objectPayload = payload as Record<string, unknown>;
+
+  if (typeof objectPayload.status === "boolean") {
+    return objectPayload.status;
+  }
+
+  if (typeof objectPayload.success === "boolean") {
+    return objectPayload.success;
+  }
+
+  const razorpayResponse =
+    objectPayload.razorpay_response && typeof objectPayload.razorpay_response === "object"
+      ? (objectPayload.razorpay_response as Record<string, unknown>)
+      : null;
+  const statusValues = [
+    objectPayload.payment_status,
+    objectPayload.paymentStatus,
+    typeof objectPayload.status === "string" ? objectPayload.status : undefined,
+    razorpayResponse?.status
+  ];
+
+  return statusValues.some((value) => {
+    if (typeof value !== "string") {
+      return false;
+    }
+
+    return ["captured", "paid", "success", "successful"].includes(
+      value.trim().toLowerCase()
+    );
+  });
+}
+
 function isJsonResponse(response: Response) {
   return response.headers.get("content-type")?.includes("application/json") ?? false;
 }
@@ -46,7 +83,7 @@ function readTextSuccess(text: string) {
   return text.toLowerCase().includes("success");
 }
 
-function getSingleTransactionId(value: string) {
+function getTransactionIds(value: string) {
   return value.match(/ORDS-KIT[a-zA-Z0-9]+/g) || [];
 }
 
@@ -56,6 +93,13 @@ function readMessage(payload: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function readFirstFailureMessage(
+  results: { message: string; success: boolean }[],
+  fallback: string
+) {
+  return results.find((result) => !result.success)?.message || fallback;
 }
 
 async function callTransactionApi(
@@ -95,6 +139,32 @@ async function callTransactionApi(
   };
 }
 
+async function checkBookPaymentStatus(apiUrl: string, transactionId: string) {
+  const url = new URL(apiUrl);
+  url.searchParams.set("table_name", "book_payments");
+  url.searchParams.set("transaction_id", transactionId);
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json"
+    },
+    method: "GET"
+  });
+  const payload = await response.json().catch(() => null);
+  const success =
+    response.ok && (readRazorpayStatusSuccess(payload) || readSuccess(payload));
+
+  return {
+    message: readMessage(
+      payload,
+      success ? "Payment transaction is successful." : "Payment transaction is not successful."
+    ),
+    responseStatus: response.status,
+    success,
+    transactionId
+  };
+}
+
 export async function POST(request: NextRequest) {
   if (!hasDashboardRole(request, ["admin", "wizklub"])) {
     return unauthorizedDashboardResponse();
@@ -104,64 +174,101 @@ export async function POST(request: NextRequest) {
     skipStatusCheck?: boolean;
     transactionId?: string;
   } | null;
-  const matchedTransactionIds = getSingleTransactionId(body?.transactionId || "");
+  const matchedTransactionIds = getTransactionIds(body?.transactionId || "");
 
   if (matchedTransactionIds.length === 0) {
     return NextResponse.json(
-      { message: "Please enter one ORDS-KIT transaction ID.", success: false },
+      { message: "Please enter at least one ORDS-KIT transaction ID.", success: false },
       { status: 400 }
     );
   }
 
-  if (matchedTransactionIds.length > 1) {
-    return NextResponse.json(
-      {
-        message: "Please verify only one ORDS-KIT transaction ID at a time.",
-        success: false
-      },
-      { status: 400 }
-    );
-  }
-
-  const transactionId = matchedTransactionIds[0] as string;
   const statusCheckUrl =
     process.env.TRANSACTION_STATUS_API_URL ||
-    "https://api.srichaitanyaschool.net/v3/grievance-api/check-razorpay-book-payment-status";
+    "https://api.srichaitanyaschool.net/v3/grievance-api/check-razorpay-payment-status";
   const verifyUrl = process.env.TRANSACTION_VERIFY_API_URL;
   const defaultVerifyUrl =
     "https://srichaitanyaschool.net/book-kits-payments/check-book-sales-payment-razorpay";
 
   if (!verifyUrl) {
     try {
-      if (!body?.skipStatusCheck) {
-        const statusCheck = await callTransactionApi(
-          statusCheckUrl,
-          transactionId,
-          "Payment transaction is successful.",
-          "Payment transaction is not successful."
-        );
-
-        if (!statusCheck.success) {
-          return NextResponse.json(
-            { message: statusCheck.message, success: false },
-            { status: statusCheck.responseStatus >= 400 ? statusCheck.responseStatus : 400 }
+      const statusResults = body?.skipStatusCheck
+        ? matchedTransactionIds.map((transactionId) => ({
+            message: "Payment transaction is successful.",
+            responseStatus: 200,
+            success: true,
+            transactionId
+          }))
+        : await Promise.all(
+            matchedTransactionIds.map((transactionId) =>
+              checkBookPaymentStatus(statusCheckUrl, transactionId)
+            )
           );
-        }
+      const successfulTransactionIds = statusResults
+        .filter((result) => result.success)
+        .map((result) => result.transactionId);
+      const failedStatusIds = statusResults
+        .filter((result) => !result.success)
+        .map((result) => result.transactionId);
+
+      if (successfulTransactionIds.length === 0) {
+        return NextResponse.json(
+          {
+            failedIds: failedStatusIds,
+            message: readFirstFailureMessage(
+              statusResults,
+              "No completed book payments found to generate receipt."
+            ),
+            results: statusResults,
+            success: false
+          },
+          { status: 400 }
+        );
       }
 
-      const receiptGeneration = await callTransactionApi(
-        defaultVerifyUrl,
-        transactionId,
-        "Receipt generated. Reach out site for download receipt.",
-        "Transaction verification failed."
+      const receiptResults = await Promise.all(
+        successfulTransactionIds.map((transactionId) =>
+          callTransactionApi(
+            defaultVerifyUrl,
+            transactionId,
+            "Receipt generated. Reach out site for download receipt.",
+            "Transaction verification failed."
+          )
+        )
       );
+      const failedReceiptIds = receiptResults
+        .map((result, index) => ({
+          ...result,
+          transactionId: successfulTransactionIds[index] as string
+        }))
+        .filter((result) => !result.success)
+        .map((result) => result.transactionId);
+      const failedIds = [...failedStatusIds, ...failedReceiptIds];
+      const success = failedIds.length === 0;
 
       return NextResponse.json(
         {
-          message: receiptGeneration.message,
-          success: receiptGeneration.success
+          failedIds,
+          message:
+            matchedTransactionIds.length === 1
+              ? receiptResults[0]?.message || statusResults[0]?.message || "Book payment verification completed."
+              : `${matchedTransactionIds.length - failedIds.length}/${matchedTransactionIds.length} book payment receipt generations successful.${
+                  failedIds.length
+                    ? ` ${readFirstFailureMessage(
+                        [...statusResults, ...receiptResults],
+                        "Some book payment receipt generations failed."
+                      )}`
+                    : ""
+                }`,
+          results: statusResults.map((statusResult) => ({
+            ...statusResult,
+            updated:
+              statusResult.success &&
+              !failedReceiptIds.includes(statusResult.transactionId)
+          })),
+          success
         },
-        { status: receiptGeneration.success ? 200 : 400 }
+        { status: success ? 200 : 400 }
       );
     } catch {
       return NextResponse.json(
@@ -172,7 +279,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (verifyUrl === "demo") {
-    const isDemoSuccess = transactionId.toUpperCase().startsWith("ORDS-KIT");
+    const isDemoSuccess = matchedTransactionIds.every((transactionId) =>
+      transactionId.toUpperCase().startsWith("ORDS-KIT")
+    );
 
     return NextResponse.json(
       {
@@ -186,35 +295,82 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    if (!body?.skipStatusCheck) {
-      const statusCheck = await callTransactionApi(
-        statusCheckUrl,
-        transactionId,
-        "Payment transaction is successful.",
-        "Payment transaction is not successful."
-      );
-
-      if (!statusCheck.success) {
-        return NextResponse.json(
-          { message: statusCheck.message, success: false },
-          { status: statusCheck.responseStatus >= 400 ? statusCheck.responseStatus : 400 }
+    const statusResults = body?.skipStatusCheck
+      ? matchedTransactionIds.map((transactionId) => ({
+          message: "Payment transaction is successful.",
+          responseStatus: 200,
+          success: true,
+          transactionId
+        }))
+      : await Promise.all(
+          matchedTransactionIds.map((transactionId) =>
+            checkBookPaymentStatus(statusCheckUrl, transactionId)
+          )
         );
-      }
+    const successfulTransactionIds = statusResults
+      .filter((result) => result.success)
+      .map((result) => result.transactionId);
+    const failedStatusIds = statusResults
+      .filter((result) => !result.success)
+      .map((result) => result.transactionId);
+
+    if (successfulTransactionIds.length === 0) {
+      return NextResponse.json(
+        {
+          failedIds: failedStatusIds,
+          message: readFirstFailureMessage(
+            statusResults,
+            "No completed book payments found to generate receipt."
+          ),
+          results: statusResults,
+          success: false
+        },
+        { status: 400 }
+      );
     }
 
-    const receiptGeneration = await callTransactionApi(
-      verifyUrl || defaultVerifyUrl,
-      transactionId,
-      "Receipt generated. Reach out site for download receipt.",
-      "Transaction verification failed."
+    const receiptResults = await Promise.all(
+      successfulTransactionIds.map((transactionId) =>
+        callTransactionApi(
+          verifyUrl || defaultVerifyUrl,
+          transactionId,
+          "Receipt generated. Reach out site for download receipt.",
+          "Transaction verification failed."
+        )
+      )
     );
+    const failedReceiptIds = receiptResults
+      .map((result, index) => ({
+        ...result,
+        transactionId: successfulTransactionIds[index] as string
+      }))
+      .filter((result) => !result.success)
+      .map((result) => result.transactionId);
+    const failedIds = [...failedStatusIds, ...failedReceiptIds];
+    const success = failedIds.length === 0;
 
     return NextResponse.json(
       {
-        message: receiptGeneration.message,
-        success: receiptGeneration.success
+        failedIds,
+        message:
+          matchedTransactionIds.length === 1
+            ? receiptResults[0]?.message || statusResults[0]?.message || "Book payment verification completed."
+            : `${matchedTransactionIds.length - failedIds.length}/${matchedTransactionIds.length} book payment receipt generations successful.${
+                failedIds.length
+                  ? ` ${readFirstFailureMessage(
+                      [...statusResults, ...receiptResults],
+                      "Some book payment receipt generations failed."
+                    )}`
+                  : ""
+              }`,
+        results: statusResults.map((statusResult) => ({
+          ...statusResult,
+          updated:
+            statusResult.success && !failedReceiptIds.includes(statusResult.transactionId)
+        })),
+        success
       },
-      { status: receiptGeneration.success ? 200 : 400 }
+      { status: success ? 200 : 400 }
     );
   } catch {
     return NextResponse.json(

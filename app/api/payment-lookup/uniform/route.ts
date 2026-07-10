@@ -89,7 +89,78 @@ function parseIds(value: string) {
     .filter(Boolean);
 }
 
-async function checkUniformPayment(transactionId: string) {
+function readFirstFailureMessage(
+  results: { message: string; success: boolean }[],
+  fallback: string
+) {
+  return results.find((result) => !result.success)?.message || fallback;
+}
+
+function readRazorpayStatusSuccess(payload: unknown, responseOk: boolean) {
+  if (!payload || typeof payload !== "object") {
+    return responseOk;
+  }
+
+  const objectPayload = payload as Record<string, unknown>;
+
+  if (typeof objectPayload.status === "boolean") {
+    return objectPayload.status;
+  }
+
+  if (typeof objectPayload.success === "boolean") {
+    return objectPayload.success;
+  }
+
+  const razorpayResponse =
+    objectPayload.razorpay_response && typeof objectPayload.razorpay_response === "object"
+      ? (objectPayload.razorpay_response as Record<string, unknown>)
+      : null;
+  const statusValues = [
+    objectPayload.payment_status,
+    objectPayload.paymentStatus,
+    typeof objectPayload.status === "string" ? objectPayload.status : undefined,
+    razorpayResponse?.status
+  ];
+
+  return statusValues.some((value) => {
+    if (typeof value !== "string") {
+      return false;
+    }
+
+    return ["captured", "paid", "success", "successful"].includes(
+      value.trim().toLowerCase()
+    );
+  });
+}
+
+async function checkRazorpayUniformPaymentStatus(transactionId: string) {
+  const url = new URL(
+    "https://api.srichaitanyaschool.net/v3/grievance-api/check-razorpay-payment-status"
+  );
+  url.searchParams.set("table_name", "uniform_payments");
+  url.searchParams.set("transaction_id", transactionId);
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json"
+    },
+    method: "GET"
+  });
+  const payload = await response.json().catch(() => null);
+  const success = response.ok && readRazorpayStatusSuccess(payload, response.ok);
+
+  return {
+    message: readMessage(
+      payload,
+      success ? "Payment completed successfully." : "Payment is not completed."
+    ),
+    payload,
+    success,
+    transactionId
+  };
+}
+
+async function updateUniformPayment(transactionId: string) {
   const url = new URL(
     "https://srichaitanyaschool.net/uniform-payments/check-uniform-sales-payment-razorpay"
   );
@@ -111,12 +182,14 @@ async function checkUniformPayment(transactionId: string) {
       : response.ok && readSuccess(payload, response.ok);
   const fallback = success
     ? "Uniform receipt fetched successfully."
-    : "Uniform receipt lookup failed.";
+    : "failed to rehit";
 
   return {
     message:
-      typeof payload === "string" && payload.trim()
-        ? payload
+      typeof payload === "string"
+        ? success && payload.trim()
+          ? payload
+          : fallback
         : readMessage(payload, fallback),
     success,
     transactionId
@@ -141,19 +214,68 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const results = await Promise.all(ids.map((id) => checkUniformPayment(id)));
-    const successCount = results.filter((result) => result.success).length;
-    const success = successCount === results.length;
+    const statusResults = await Promise.all(
+      ids.map((id) => checkRazorpayUniformPaymentStatus(id))
+    );
+    const successfulTransactionIds = statusResults
+      .filter((result) => result.success)
+      .map((result) => result.transactionId);
+    const failedStatusTransactionIds = statusResults
+      .filter((result) => !result.success)
+      .map((result) => result.transactionId);
+
+    if (successfulTransactionIds.length === 0) {
+      return NextResponse.json(
+        {
+          failedIds: failedStatusTransactionIds,
+          message: readFirstFailureMessage(
+            statusResults,
+            "No completed uniform payments found to update."
+          ),
+          results: statusResults,
+          success: false
+        },
+        { status: 400 }
+      );
+    }
+
+    const updateResults = await Promise.all(
+      successfulTransactionIds.map((id) => updateUniformPayment(id))
+    );
+    const failedUpdateTransactionIds = updateResults
+      .filter((result) => !result.success)
+      .map((result) => result.transactionId);
+    const failedIds = [...failedStatusTransactionIds, ...failedUpdateTransactionIds];
+    const success = failedIds.length === 0;
+    const successCount = ids.length - failedIds.length;
 
     return NextResponse.json(
       {
+        failedIds,
         message:
-          results.length === 1
-            ? results[0]?.message || "Uniform receipt lookup completed."
-            : `${successCount}/${results.length} uniform receipt lookup${
-                results.length === 1 ? "" : "s"
-              } successful.`,
-        results,
+          ids.length === 1
+            ? updateResults[0]?.message ||
+              statusResults[0]?.message ||
+              "Uniform receipt lookup completed."
+            : `${successCount}/${ids.length} uniform receipt lookups successful.${
+                failedIds.length
+                  ? ` ${readFirstFailureMessage(
+                      [...statusResults, ...updateResults],
+                      "Some uniform payments failed."
+                    )}`
+                  : ""
+              }`,
+        results: statusResults.map((statusResult) => ({
+          ...statusResult,
+          updated:
+            statusResult.success &&
+            updateResults.some(
+              (updateResult) =>
+                updateResult.transactionId === statusResult.transactionId &&
+                updateResult.success
+            )
+        })),
+        updateResults,
         success
       },
       { status: success ? 200 : 400 }

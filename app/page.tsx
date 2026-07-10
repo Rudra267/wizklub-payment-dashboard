@@ -3131,6 +3131,17 @@ const paymentLookupCards = [
     iconBg: "from-[#F5A623] to-[#D88912]",
     key: "tuition",
     title: "Tuition / Bus / Pocket Money"
+  },
+  {
+    border: "border-[#0191AA]/72",
+    button: "!bg-gradient-to-r !from-[#0191AA] !to-[#0191AA] shadow-[0_0_34px_rgba(1,145,170,.26)]",
+    buttonLabel: "Verify Transaction",
+    description: "Verify books payment status and generate receipt.",
+    focus: "focus:border-[#0191AA]/70 focus:shadow-[0_0_0_4px_rgba(1,145,170,.14),0_0_28px_rgba(1,145,170,.12)]",
+    icon: BadgeCheck,
+    iconBg: "from-[#0191AA] to-[#0191AA]",
+    key: "wizklub",
+    title: "Books Payment"
   }
 ];
 
@@ -3138,22 +3149,31 @@ function PaymentLookupView() {
   type TuitionProvider = "razorpay" | "cashfree" | "grayquest";
 
   const [admissionTransactionId, setAdmissionTransactionId] = useState("");
+  const [admissionFailedIds, setAdmissionFailedIds] = useState("");
   const [admissionLookupState, setAdmissionLookupState] =
     useState<LookupState>("idle");
   const [admissionLookupMessage, setAdmissionLookupMessage] = useState("");
   const [examTransactionId, setExamTransactionId] = useState("");
+  const [examFailedIds, setExamFailedIds] = useState("");
   const [examLookupState, setExamLookupState] = useState<LookupState>("idle");
   const [examLookupMessage, setExamLookupMessage] = useState("");
   const [uniformTransactionId, setUniformTransactionId] = useState("");
+  const [uniformFailedIds, setUniformFailedIds] = useState("");
   const [uniformLookupState, setUniformLookupState] =
     useState<LookupState>("idle");
   const [uniformLookupMessage, setUniformLookupMessage] = useState("");
   const [tuitionProvider, setTuitionProvider] =
     useState<TuitionProvider>("razorpay");
   const [tuitionIds, setTuitionIds] = useState("");
+  const [tuitionFailedIds, setTuitionFailedIds] = useState("");
   const [tuitionLookupState, setTuitionLookupState] =
     useState<LookupState>("idle");
   const [tuitionLookupMessage, setTuitionLookupMessage] = useState("");
+  const [wizklubTransactionId, setWizklubTransactionId] = useState("");
+  const [wizklubFailedIds, setWizklubFailedIds] = useState("");
+  const [wizklubVerifyState, setWizklubVerifyState] = useState<LookupState>("idle");
+  const [wizklubVerifyMessage, setWizklubVerifyMessage] = useState("");
+  const [copiedFailedLookupIds, setCopiedFailedLookupIds] = useState(false);
 
   async function handleAdmissionLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3166,6 +3186,7 @@ function PaymentLookupView() {
     }
 
     setAdmissionLookupState("loading");
+    setAdmissionFailedIds("");
     setAdmissionLookupMessage("Checking admission payment. Please wait.");
 
     try {
@@ -3177,6 +3198,12 @@ function PaymentLookupView() {
         method: "POST"
       });
       const result = await response.json().catch(() => null);
+      const failedIds =
+        result && Array.isArray(result.failedIds)
+          ? result.failedIds
+              .filter((id: unknown) => typeof id === "string" && id.trim())
+              .join("\n")
+          : "";
       const message =
         result && typeof result.message === "string"
           ? result.message
@@ -3185,12 +3212,17 @@ function PaymentLookupView() {
             : "Admission payment lookup failed.";
 
       if (!response.ok || !result?.success) {
-        throw new Error(message);
+        setAdmissionFailedIds(failedIds || transactionId);
+        setAdmissionLookupState("error");
+        setAdmissionLookupMessage(message);
+        return;
       }
 
+      setAdmissionFailedIds("");
       setAdmissionLookupState("success");
       setAdmissionLookupMessage(message);
     } catch (error) {
+      setAdmissionFailedIds(transactionId);
       setAdmissionLookupState("error");
       setAdmissionLookupMessage(
         error instanceof Error ? error.message : "Admission payment lookup failed."
@@ -3209,6 +3241,7 @@ function PaymentLookupView() {
     }
 
     setExamLookupState("loading");
+    setExamFailedIds("");
     setExamLookupMessage("Checking exam / other receipt payment. Please wait.");
 
     try {
@@ -3220,6 +3253,12 @@ function PaymentLookupView() {
         method: "POST"
       });
       const result = await response.json().catch(() => null);
+      const failedIds =
+        result && Array.isArray(result.failedIds)
+          ? result.failedIds
+              .filter((id: unknown) => typeof id === "string" && id.trim())
+              .join("\n")
+          : "";
       const message =
         result && typeof result.message === "string"
           ? result.message
@@ -3228,12 +3267,17 @@ function PaymentLookupView() {
             : "Exam / other receipt lookup failed.";
 
       if (!response.ok || !result?.success) {
-        throw new Error(message);
+        setExamFailedIds(failedIds || transactionId);
+        setExamLookupState("error");
+        setExamLookupMessage(message);
+        return;
       }
 
+      setExamFailedIds("");
       setExamLookupState("success");
       setExamLookupMessage(message);
     } catch (error) {
+      setExamFailedIds(transactionId);
       setExamLookupState("error");
       setExamLookupMessage(
         error instanceof Error ? error.message : "Exam / other receipt lookup failed."
@@ -3252,6 +3296,7 @@ function PaymentLookupView() {
     }
 
     setUniformLookupState("loading");
+    setUniformFailedIds("");
     setUniformLookupMessage("Checking uniform receipt payment. Please wait.");
 
     try {
@@ -3263,6 +3308,12 @@ function PaymentLookupView() {
         method: "POST"
       });
       const result = await response.json().catch(() => null);
+      const failedIds =
+        result && Array.isArray(result.failedIds)
+          ? result.failedIds
+              .filter((id: unknown) => typeof id === "string" && id.trim())
+              .join("\n")
+          : "";
       const message =
         result && typeof result.message === "string"
           ? result.message
@@ -3271,12 +3322,17 @@ function PaymentLookupView() {
             : "Uniform receipt lookup failed.";
 
       if (!response.ok || !result?.success) {
-        throw new Error(message);
+        setUniformFailedIds(failedIds || transactionId);
+        setUniformLookupState("error");
+        setUniformLookupMessage(message);
+        return;
       }
 
+      setUniformFailedIds("");
       setUniformLookupState("success");
       setUniformLookupMessage(message);
     } catch (error) {
+      setUniformFailedIds(transactionId);
       setUniformLookupState("error");
       setUniformLookupMessage(
         error instanceof Error ? error.message : "Uniform receipt lookup failed."
@@ -3305,6 +3361,7 @@ function PaymentLookupView() {
     }
 
     setTuitionLookupState("loading");
+    setTuitionFailedIds("");
     setTuitionLookupMessage(
       tuitionProvider === "razorpay"
         ? "Updating Razorpay tuition payment status. Please wait."
@@ -3320,6 +3377,12 @@ function PaymentLookupView() {
         method: "POST"
       });
       const result = await response.json().catch(() => null);
+      const failedIds =
+        result && Array.isArray(result.failedIds)
+          ? result.failedIds
+              .filter((id: unknown) => typeof id === "string" && id.trim())
+              .join("\n")
+          : "";
       const message =
         result && typeof result.message === "string"
           ? result.message
@@ -3328,18 +3391,166 @@ function PaymentLookupView() {
             : "Tuition payment status update failed.";
 
       if (!response.ok || !result?.success) {
-        throw new Error(message);
+        setTuitionFailedIds(failedIds || ids);
+        setTuitionLookupState("error");
+        setTuitionLookupMessage(message);
+        return;
       }
 
+      setTuitionFailedIds("");
       setTuitionLookupState("success");
       setTuitionLookupMessage(message);
     } catch (error) {
+      setTuitionFailedIds(ids);
       setTuitionLookupState("error");
       setTuitionLookupMessage(
         error instanceof Error ? error.message : "Tuition payment status update failed."
       );
     }
   }
+
+  async function handleWizklubVerify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const matchedTransactionIds = getSingleTransactionId(wizklubTransactionId);
+
+    if (!wizklubTransactionId.trim() || matchedTransactionIds.length === 0) {
+      setWizklubVerifyState("error");
+      setWizklubVerifyMessage("Please enter at least one ORDS-KIT transaction ID.");
+      return;
+    }
+
+    const verifiedTransactionIds = matchedTransactionIds.join("\n");
+    setWizklubTransactionId(verifiedTransactionIds);
+    setWizklubFailedIds("");
+    setWizklubVerifyState("loading");
+    setWizklubVerifyMessage("Checking payment status and generating receipts.");
+
+    try {
+      const receiptResponse = await fetch("/api/transaction/verify", {
+        body: JSON.stringify({
+          transactionId: verifiedTransactionIds
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const receiptResult = await receiptResponse.json().catch(() => null);
+      const failedIds =
+        receiptResult && Array.isArray(receiptResult.failedIds)
+          ? receiptResult.failedIds
+              .filter((id: unknown) => typeof id === "string" && id.trim())
+              .join("\n")
+          : "";
+
+      if (!receiptResponse.ok || !receiptResult?.success) {
+        setWizklubFailedIds(failedIds || verifiedTransactionIds);
+        setWizklubVerifyState("error");
+        setWizklubVerifyMessage(
+          receiptResult?.message || "Transaction verification failed."
+        );
+        return;
+      }
+
+      setWizklubFailedIds("");
+      setWizklubVerifyState("success");
+      setWizklubVerifyMessage(
+        receiptResult.message || "Receipt generated. Reach out site for download receipt."
+      );
+    } catch (error) {
+      setWizklubFailedIds(verifiedTransactionIds);
+      setWizklubVerifyState("error");
+      setWizklubVerifyMessage(
+        error instanceof Error ? error.message : "Transaction verification failed."
+      );
+    }
+  }
+
+  const failedLookupRows = [
+    {
+      idLabel: "Transaction ID",
+      ids: admissionFailedIds,
+      module: "Admission",
+      state: admissionLookupState
+    },
+    {
+      idLabel: "Transaction ID",
+      ids: examFailedIds,
+      module: "Exam / Other",
+      state: examLookupState
+    },
+    {
+      idLabel: "Transaction ID",
+      ids: uniformFailedIds,
+      module: "Uniform",
+      state: uniformLookupState
+    },
+    {
+      idLabel: tuitionProvider === "razorpay" ? "Order ID" : "Transaction ID",
+      ids: tuitionFailedIds,
+      module: "Tuition / Bus / Pocket Money",
+      state: tuitionLookupState
+    },
+    {
+      idLabel: "Transaction ID",
+      ids: wizklubFailedIds,
+      module: "Books",
+      state: wizklubVerifyState
+    }
+  ].flatMap((source) =>
+    source.state === "error"
+      ? Array.from(
+          new Set(
+            source.ids.match(/ORDS-[a-zA-Z0-9]+|order_[a-zA-Z0-9]+|pay_[a-zA-Z0-9]+/g) ||
+              source.ids
+                .split(/[\s,;]+/)
+                .map((id) => id.replace(/^['"]+|['"]+$/g, "").trim())
+                .filter(Boolean)
+          )
+        )
+          .map((id) => id.trim())
+          .filter(Boolean)
+          .map((id) => ({
+            id,
+            idLabel: source.idLabel,
+            module: source.module
+          }))
+      : []
+  );
+  const failedLookupCopyValue = failedLookupRows
+    .map((row) => `'${row.id.replace(/'/g, "\\'")}'`)
+    .join(", ");
+
+  async function handleCopyFailedLookupIds() {
+    if (!failedLookupCopyValue) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(failedLookupCopyValue);
+    setCopiedFailedLookupIds(true);
+    window.setTimeout(() => setCopiedFailedLookupIds(false), 1800);
+  }
+
+  function failedLookupModuleClass(module: string) {
+    if (module === "Books") {
+      return "border-[#0191AA]/40 bg-[#0191AA]/12 text-[#63D6E8]";
+    }
+
+    if (module === "Admission") {
+      return "border-[#00E7B0]/36 bg-[#00E7B0]/10 text-[#00E7B0]";
+    }
+
+    if (module === "Tuition / Bus / Pocket Money") {
+      return "border-[#D88912]/42 bg-[#D88912]/10 text-[#FFB72E]";
+    }
+
+    if (module === "Exam / Other") {
+      return "border-[#315EFF]/40 bg-[#315EFF]/10 text-[#7D96FF]";
+    }
+
+    return "border-[#8B3FD8]/40 bg-[#8B3FD8]/10 text-[#B983FF]";
+  }
+
   return (
     <div className="mt-8 grid gap-7">
       <section className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
@@ -3349,8 +3560,13 @@ function PaymentLookupView() {
           const isExamCard = item.key === "exam";
           const isUniformCard = item.key === "uniform";
           const isTuitionCard = item.key === "tuition";
+          const isWizklubCard = item.key === "wizklub";
           const canSubmitLookup =
-            isAdmissionCard || isExamCard || isUniformCard || isTuitionCard;
+            isAdmissionCard ||
+            isExamCard ||
+            isUniformCard ||
+            isTuitionCard ||
+            isWizklubCard;
           const currentLookupState = isAdmissionCard
             ? admissionLookupState
             : isExamCard
@@ -3359,6 +3575,8 @@ function PaymentLookupView() {
                 ? uniformLookupState
                 : isTuitionCard
                   ? tuitionLookupState
+                  : isWizklubCard
+                    ? wizklubVerifyState
               : "idle";
           const currentLookupMessage = isAdmissionCard
             ? admissionLookupMessage
@@ -3368,7 +3586,25 @@ function PaymentLookupView() {
                 ? uniformLookupMessage
                 : isTuitionCard
                   ? tuitionLookupMessage
+                  : isWizklubCard
+                    ? wizklubVerifyMessage
               : "";
+          const wizklubAccentStyle = isWizklubCard
+            ? {
+                borderColor: "rgba(1, 145, 170, 0.72)"
+              }
+            : undefined;
+          const wizklubIconStyle = isWizklubCard
+            ? {
+                background: "linear-gradient(135deg, #0191AA, #0191AA)"
+              }
+            : undefined;
+          const wizklubButtonStyle = isWizklubCard
+            ? {
+                background: "linear-gradient(90deg, #0191AA, #0191AA)",
+                boxShadow: "0 0 34px rgba(1, 145, 170, 0.26)"
+              }
+            : undefined;
 
           return (
             <motion.article
@@ -3380,6 +3616,7 @@ function PaymentLookupView() {
               )}
               initial={{ opacity: 0, y: 18 }}
               key={item.title}
+              style={wizklubAccentStyle}
               transition={{ delay: index * 0.06, duration: 0.38, ease: "easeOut" }}
             >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(0,231,176,.055),transparent_30%),radial-gradient(circle_at_90%_100%,rgba(77,111,255,.05),transparent_30%)]" />
@@ -3390,6 +3627,7 @@ function PaymentLookupView() {
                       "grid h-[48px] w-[48px] place-items-center rounded-[8px] bg-gradient-to-br text-white shadow-[0_0_24px_rgba(0,0,0,.22)]",
                       item.iconBg
                     )}
+                    style={wizklubIconStyle}
                   >
                     <Icon className="h-6 w-6 fill-white/10" strokeWidth={2.35} />
                   </div>
@@ -3414,7 +3652,9 @@ function PaymentLookupView() {
                           ? handleUniformLookup
                           : isTuitionCard
                             ? handleTuitionLookup
-                        : undefined
+                            : isWizklubCard
+                              ? handleWizklubVerify
+                              : undefined
                   }
                 >
                   {isTuitionCard ? (
@@ -3438,7 +3678,10 @@ function PaymentLookupView() {
                                 )}
                                 disabled={isDisabled}
                                 key={provider}
-                                onClick={() => setTuitionProvider(provider)}
+                                onClick={() => {
+                                  setTuitionProvider(provider);
+                                  setTuitionFailedIds("");
+                                }}
                                 type="button"
                               >
                                 {provider}
@@ -3453,7 +3696,10 @@ function PaymentLookupView() {
                             "min-h-[72px] w-full resize-none rounded-[6px] border border-[#33445F] bg-[#061226]/76 px-4 py-3 pr-12 text-[13px] leading-5 text-white outline-none transition placeholder:text-[#A7B5CB]",
                             item.focus
                           )}
-                          onChange={(event) => setTuitionIds(event.target.value)}
+                          onChange={(event) => {
+                            setTuitionIds(event.target.value);
+                            setTuitionFailedIds("");
+                          }}
                           placeholder={
                             tuitionProvider === "razorpay"
                               ? "Enter Razorpay order IDs"
@@ -3474,13 +3720,23 @@ function PaymentLookupView() {
                         onChange={(event) => {
                           if (isAdmissionCard) {
                             setAdmissionTransactionId(event.target.value);
+                            setAdmissionFailedIds("");
                           } else if (isExamCard) {
                             setExamTransactionId(event.target.value);
+                            setExamFailedIds("");
                           } else if (isUniformCard) {
                             setUniformTransactionId(event.target.value);
+                            setUniformFailedIds("");
+                          } else if (isWizklubCard) {
+                            setWizklubTransactionId(event.target.value);
+                            setWizklubFailedIds("");
                           }
                         }}
-                        placeholder="Enter Transaction IDs"
+                        placeholder={
+                          isWizklubCard
+                            ? "Enter ORDS-KIT Transaction IDs"
+                            : "Enter Transaction IDs"
+                        }
                         value={
                           isAdmissionCard
                             ? admissionTransactionId
@@ -3488,7 +3744,9 @@ function PaymentLookupView() {
                               ? examTransactionId
                               : isUniformCard
                                 ? uniformTransactionId
-                                : undefined
+                                : isWizklubCard
+                                  ? wizklubTransactionId
+                                  : undefined
                         }
                       />
                       <ScanQrCode className="pointer-events-none absolute right-3.5 top-3.5 h-5 w-5 text-white" />
@@ -3503,6 +3761,7 @@ function PaymentLookupView() {
                       (canSubmitLookup && currentLookupState === "loading") ||
                       (isTuitionCard && tuitionProvider === "grayquest")
                     }
+                    style={wizklubButtonStyle}
                     type={canSubmitLookup ? "submit" : "button"}
                   >
                     {canSubmitLookup && currentLookupState === "loading" ? (
@@ -3510,7 +3769,7 @@ function PaymentLookupView() {
                     ) : (
                       <ShieldCheck className="h-4 w-4" />
                     )}
-                    Hit / Fetch
+                    {"buttonLabel" in item ? item.buttonLabel : "Hit / Fetch"}
                   </Button>
                 </form>
 
@@ -3533,6 +3792,123 @@ function PaymentLookupView() {
             </motion.article>
           );
         })}
+
+      <motion.article
+        animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-[8px] border border-[#00E7B0]/22 bg-[linear-gradient(145deg,rgba(8,20,39,.88),rgba(3,11,24,.76))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_20px_52px_rgba(0,0,0,.30),0_0_28px_rgba(0,231,176,.075)] md:col-span-2 2xl:col-span-3"
+        initial={{ opacity: 0, y: 18 }}
+        transition={{ delay: 0.32, duration: 0.38, ease: "easeOut" }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(255,77,109,.052),transparent_30%),radial-gradient(circle_at_90%_100%,rgba(0,231,176,.045),transparent_30%)]" />
+        <div className="relative z-10 flex h-full min-w-0 flex-col">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-[8px] border border-[#FF4D6D]/20 bg-[#FF4D6D]/12 text-[#FF4D6D] shadow-[0_0_24px_rgba(255,77,109,.12)]">
+                <Info className="h-5 w-5" strokeWidth={2.4} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-bold leading-5 text-white">
+                  Failed Transactions
+                </h2>
+                <p className="mt-1 text-[11px] leading-4 text-[#8CA3C7]">
+                  Only failed IDs from the current lookup session are shown.
+                </p>
+              </div>
+            </div>
+            <Button
+              className={cn(
+                "h-9 rounded-[6px] border px-3 text-[11px] font-bold transition",
+                failedLookupRows.length
+                  ? "border-[#0191AA]/45 bg-[#0191AA]/14 text-[#DFFAFF] hover:bg-[#0191AA]/22"
+                  : "border-[#1E3350] bg-[#07172D]/74 text-[#60708A]"
+              )}
+              disabled={!failedLookupRows.length}
+              onClick={handleCopyFailedLookupIds}
+              type="button"
+              variant="ghost"
+            >
+              {copiedFailedLookupIds ? (
+                <Check className="h-3.5 w-3.5 text-[#00E7B0]" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              {copiedFailedLookupIds ? "Copied" : "Copy Failed IDs"}
+            </Button>
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-[8px] border border-[#315EFF]/18 bg-[#07172D]/58 shadow-[inset_0_1px_0_rgba(255,255,255,.035),0_0_20px_rgba(77,111,255,.055)]">
+            {failedLookupRows.length ? (
+              <div className="max-h-[220px] overflow-auto">
+                <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-left max-sm:min-w-0">
+                <thead className="max-sm:hidden">
+                  <tr className="sticky top-0 z-10 bg-[#0A1B35] text-[10px] font-bold uppercase tracking-[0.08em] text-[#8CA3C7] shadow-[0_1px_0_rgba(30,51,80,.72)]">
+                    <th className="w-12 px-4 py-3">#</th>
+                    <th className="px-4 py-3">Failed ID</th>
+                    <th className="w-[150px] px-4 py-3">Type</th>
+                    <th className="w-[130px] px-4 py-3 text-right">ID Format</th>
+                  </tr>
+                </thead>
+                <tbody className="max-sm:block">
+                  {failedLookupRows.map((row, index) => (
+                      <tr
+                        className="text-[12px] text-white transition hover:bg-white/[.035] max-sm:grid max-sm:grid-cols-[32px_minmax(0,1fr)] max-sm:gap-x-3 max-sm:border-t max-sm:border-[#1E3350]/72 max-sm:px-4 max-sm:py-3 max-sm:first:border-t-0"
+                        key={`${row.module}-${row.id}-${index}`}
+                      >
+                        <td className="border-t border-[#1E3350]/72 px-4 py-3 text-[#8CA3C7] max-sm:border-0 max-sm:p-0">
+                          {index + 1}
+                        </td>
+                        <td className="border-t border-[#1E3350]/72 px-4 py-3 max-sm:border-0 max-sm:p-0">
+                          <span className="block break-all font-mono text-[12px] font-semibold leading-5 text-[#EAF2FF]">
+                            {row.id}
+                          </span>
+                        </td>
+                        <td className="border-t border-[#1E3350]/72 px-4 py-3 max-sm:col-start-2 max-sm:border-0 max-sm:p-0 max-sm:pt-2">
+                          <span
+                            className={cn(
+                              "inline-flex max-w-full justify-center rounded-[5px] border px-2.5 py-1.5 text-[11px] font-bold",
+                              failedLookupModuleClass(row.module)
+                            )}
+                          >
+                            {row.module}
+                          </span>
+                        </td>
+                        <td className="border-t border-[#1E3350]/72 px-4 py-3 text-right text-[11px] font-semibold text-[#D3DCF1] max-sm:col-start-2 max-sm:border-0 max-sm:p-0 max-sm:pt-2 max-sm:text-left">
+                          {row.idLabel}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+              </div>
+            ) : (
+              <div className="grid min-h-[148px] place-items-center px-4 py-8 text-center">
+                <div>
+                  <div className="mx-auto grid h-[38px] w-[38px] place-items-center rounded-[8px] border border-[#00E7B0]/20 bg-[#00E7B0]/10 text-[#00E7B0]">
+                    <Check className="h-5 w-5" strokeWidth={2.4} />
+                  </div>
+                  <p className="mt-3 text-[13px] font-bold text-white">
+                    No failed transaction IDs
+                  </p>
+                  <p className="mt-1 text-[11px] text-[#8CA3C7]">
+                    Failed book, uniform, tuition, admission, or exam IDs will appear here.
+                  </p>
+                </div>
+              </div>
+            )}
+            </div>
+          <div className="mt-4 flex min-w-0 flex-col gap-3 text-[11px] text-[#D3DCF1] sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              Showing {failedLookupRows.length ? 1 : 0} to {failedLookupRows.length} of{" "}
+              {failedLookupRows.length} failed IDs
+            </p>
+            {failedLookupCopyValue ? (
+              <p className="max-h-20 min-w-0 overflow-auto break-all rounded-[6px] border border-[#1E3350]/72 bg-[#07172D]/72 px-3 py-2 font-mono text-[10px] leading-4 text-[#8CA3C7] sm:max-w-[520px]">
+                {failedLookupCopyValue}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </motion.article>
       </section>
 
     </div>
@@ -7033,6 +7409,14 @@ const sedSummaryCards = [
     subLabel: "Most recent successful payment",
     value: "30 Jun 2026"
   },
+  {
+    accent: "linear-gradient(135deg,#0191AA,#006B7D)",
+    border: "border-[#0191AA]/50",
+    icon: BarChart3,
+    label: "Latest Date Count",
+    subLabel: "Records on latest payment date",
+    value: "0"
+  },
 ];
 
 type SedPaymentRecord = {
@@ -7310,9 +7694,23 @@ function SedPaymentsView() {
     (sum, record) => sum + toAmountNumber(record.amount),
     0
   );
+  const latestSedPaymentDate = filteredSedRecords[0]?.addedOn
+    ? parseSedPaymentDate(filteredSedRecords[0].addedOn)
+    : null;
   const latestSedPayment = filteredSedRecords[0]?.addedOn
     ? formatSedPaymentDate(filteredSedRecords[0].addedOn).split(",")[0]
     : "Not available";
+  const latestSedPaymentCount = latestSedPaymentDate
+    ? filteredSedRecords.filter((record) => {
+        const recordDate = parseSedPaymentDate(record.addedOn);
+
+        return (
+          recordDate?.getFullYear() === latestSedPaymentDate.getFullYear() &&
+          recordDate.getMonth() === latestSedPaymentDate.getMonth() &&
+          recordDate.getDate() === latestSedPaymentDate.getDate()
+        );
+      }).length
+    : 0;
   const sedRowsPerPage = 10;
   const sedPageCount = Math.max(1, Math.ceil(filteredSedRecords.length / sedRowsPerPage));
   const visibleSedRecords = filteredSedRecords.slice(
@@ -7364,6 +7762,10 @@ function SedPaymentsView() {
     {
       ...sedSummaryCards[2],
       value: latestSedPayment
+    },
+    {
+      ...sedSummaryCards[3],
+      value: String(latestSedPaymentCount)
     }
   ];
 
