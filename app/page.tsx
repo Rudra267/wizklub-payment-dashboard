@@ -112,7 +112,14 @@ type StatCard = {
 };
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Wizklub Payments" },
+  {
+    children: [
+      { icon: LayoutDashboard, label: "Wizklub Payments", view: "Wizklub Payments" },
+      { badge: "NEW", icon: BarChart3, label: "Wizklub Report", view: "Wizklub Report" }
+    ],
+    icon: LayoutDashboard,
+    label: "Wizklub"
+  },
   { icon: CreditCard, label: "Receipt Updates" },
   { icon: FileText, label: "Uniform Receipts" },
   { icon: Landmark, label: "SED Payments" },
@@ -120,7 +127,6 @@ const navItems = [
   { icon: GraduationCap, label: "Sync Student" },
   { icon: UserRoundSearch, label: "Sync Users" },
   { icon: DatabaseSearch, label: "Table Lookup" },
-  { badge: "NEW", icon: BarChart3, label: "Wizklub Report" },
   {
     children: [
       { icon: UserRound, label: "Profile", view: "Students" },
@@ -698,6 +704,9 @@ function Sidebar({
       activeView === "Book Lists" ||
       activeView === "Uniform Lists"
   );
+  const [isWizklubOpen, setIsWizklubOpen] = useState(
+    activeView === "Wizklub Payments" || activeView === "Wizklub Report"
+  );
   const updateScrollHint = () => {
     const nav = navRef.current;
 
@@ -712,7 +721,7 @@ function Sidebar({
 
   useEffect(() => {
     updateScrollHint();
-  }, [activeView, isStudentsOpen]);
+  }, [activeView, isStudentsOpen, isWizklubOpen]);
 
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-[304px] overflow-hidden border-r border-white/10 bg-gradient-to-b from-[#02111D] via-[#021725] to-[#041E33] p-4 text-white shadow-[24px_0_70px_rgba(0,0,0,.34)] xl:flex xl:flex-col">
@@ -730,7 +739,12 @@ function Sidebar({
             const Icon = item.icon;
             const children = "children" in item ? item.children ?? [] : [];
             const hasChildren = children.length > 0;
-            const isOpen = isStudentsOpen;
+            const isOpen =
+              item.label === "Wizklub"
+                ? isWizklubOpen
+                : item.label === "Student Details"
+                  ? isStudentsOpen
+                  : false;
             const isEnabled = hasChildren
               ? children.some((child) => canAccessView(role, child.view))
               : canAccessView(role, item.label);
@@ -760,7 +774,11 @@ function Sidebar({
                     }
 
                     if (hasChildren) {
-                      setIsStudentsOpen((value) => !value);
+                      if (item.label === "Wizklub") {
+                        setIsWizklubOpen((value) => !value);
+                      } else {
+                        setIsStudentsOpen((value) => !value);
+                      }
                       return;
                     }
 
@@ -775,7 +793,7 @@ function Sidebar({
                   <span className="min-w-0 flex-1 text-left">{item.label}</span>
                   {"badge" in item ? (
                     <span className="rounded-[5px] bg-[#00E7B0] px-2 py-1 text-[10px] font-black leading-none text-[#02111D]">
-                      {item.badge}
+                      {String(item.badge)}
                     </span>
                   ) : null}
                   {hasChildren ? (
@@ -815,7 +833,12 @@ function Sidebar({
                           type="button"
                         >
                           <ChildIcon className="h-4 w-4" />
-                          {child.label}
+                          <span className="min-w-0 flex-1 text-left">{child.label}</span>
+                          {"badge" in child ? (
+                            <span className="rounded-[5px] bg-[#00E7B0] px-1.5 py-0.5 text-[9px] font-black leading-none text-[#02111D]">
+                              {String(child.badge)}
+                            </span>
+                          ) : null}
                         </button>
                       );
                     })}
@@ -922,6 +945,9 @@ function MobileSidebar({
       activeView === "Book Lists" ||
       activeView === "Uniform Lists"
   );
+  const [isWizklubOpen, setIsWizklubOpen] = useState(
+    activeView === "Wizklub Payments" || activeView === "Wizklub Report"
+  );
   const updateScrollHint = () => {
     const nav = navRef.current;
 
@@ -940,7 +966,7 @@ function MobileSidebar({
     }
 
     updateScrollHint();
-  }, [activeView, isOpen, isStudentsOpen]);
+  }, [activeView, isOpen, isStudentsOpen, isWizklubOpen]);
 
   return (
     <AnimatePresence>
@@ -986,7 +1012,12 @@ function MobileSidebar({
                   const Icon = item.icon;
                   const children = "children" in item ? item.children ?? [] : [];
                   const hasChildren = children.length > 0;
-                  const isExpanded = isStudentsOpen;
+                  const isExpanded =
+                    item.label === "Wizklub"
+                      ? isWizklubOpen
+                      : item.label === "Student Details"
+                        ? isStudentsOpen
+                        : false;
                   const isEnabled = hasChildren
                     ? children.some((child) => canAccessView(role, child.view))
                     : canAccessView(role, item.label);
@@ -1015,7 +1046,11 @@ function MobileSidebar({
                           }
 
                           if (hasChildren) {
-                            setIsStudentsOpen((value) => !value);
+                            if (item.label === "Wizklub") {
+                              setIsWizklubOpen((value) => !value);
+                            } else {
+                              setIsStudentsOpen((value) => !value);
+                            }
                             return;
                           }
 
@@ -1029,7 +1064,7 @@ function MobileSidebar({
                         <span className="min-w-0 flex-1 text-left">{item.label}</span>
                         {"badge" in item ? (
                           <span className="rounded-[5px] bg-[#00E7B0] px-2 py-1 text-[10px] font-black leading-none text-[#02111D]">
-                            {item.badge}
+                            {String(item.badge)}
                           </span>
                         ) : null}
                         {hasChildren ? (
@@ -1072,7 +1107,12 @@ function MobileSidebar({
                                 type="button"
                               >
                                 <ChildIcon className="h-4 w-4" />
-                                {child.label}
+                                <span className="min-w-0 flex-1 text-left">{child.label}</span>
+                                {"badge" in child ? (
+                                  <span className="rounded-[5px] bg-[#00E7B0] px-1.5 py-0.5 text-[9px] font-black leading-none text-[#02111D]">
+                                    {String(child.badge)}
+                                  </span>
+                                ) : null}
                               </button>
                             );
                           })}
@@ -3143,12 +3183,14 @@ function ReportDropdown({
 
 function WizklubReportStat({
   accent,
+  blurred = false,
   icon: Icon,
   label,
   tone,
   value
 }: {
   accent: string;
+  blurred?: boolean;
   icon: ElementType;
   label: string;
   tone: string;
@@ -3169,7 +3211,12 @@ function WizklubReportStat({
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[12px] font-semibold text-[#D8E4F7]">{label}</p>
-          <p className="mt-2 truncate text-[23px] font-bold leading-none text-white">
+          <p
+            className={cn(
+              "mt-2 truncate text-[23px] font-bold leading-none text-white",
+              blurred && "select-none blur-[5px]"
+            )}
+          >
             {value}
           </p>
           <p className="mt-3 text-[11px] font-medium text-[#AFC0D9]">
@@ -3583,8 +3630,8 @@ function WizklubReportsView() {
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <WizklubReportStat accent="#00D7E7" icon={Link} label="Total Payment Links" tone="filtered" value={formatCompactNumber(filteredSummary.totalPaymentLinks)} />
           <WizklubReportStat accent="#00E07D" icon={UserRoundSearch} label="Total Students Paid" tone="filtered" value={formatCompactNumber(filteredSummary.totalStudentsPaid)} />
-          <WizklubReportStat accent="#315EFF" icon={IndianRupee} label="Total Collection" tone="filtered" value={formatReportCurrency(filteredSummary.totalCollection)} />
-          <WizklubReportStat accent="#8B5CF6" icon={ShoppingBag} label="Total Transactions" tone="filtered" value={formatCompactNumber(filteredSummary.totalTransactions)} />
+          <WizklubReportStat accent="#315EFF" blurred icon={IndianRupee} label="Total Collection" tone="filtered" value={formatReportCurrency(filteredSummary.totalCollection)} />
+          <WizklubReportStat accent="#8B5CF6" blurred icon={ShoppingBag} label="Total Transactions" tone="filtered" value={formatCompactNumber(filteredSummary.totalTransactions)} />
           <WizklubReportStat accent="#F59E0B" icon={Compass} label="Avg. Order Value" tone="filtered" value={formatReportCurrency(filteredSummary.averageOrderValue)} />
         </section>
       ) : null}
