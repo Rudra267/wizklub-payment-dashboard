@@ -27,6 +27,7 @@ import {
   IndianRupee,
   Info,
   Landmark,
+  Link,
   LayoutDashboard,
   Loader2,
   LockKeyhole,
@@ -52,7 +53,13 @@ import {
 import {
   Area,
   AreaChart,
-  Tooltip
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
 } from "recharts";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -84,6 +91,7 @@ type ActiveView =
   | "Sync Student"
   | "Sync Users"
   | "Table Lookup"
+  | "Wizklub Report"
   | "Students"
   | "Book Lists"
   | "Uniform Lists";
@@ -112,7 +120,7 @@ const navItems = [
   { icon: GraduationCap, label: "Sync Student" },
   { badge: "NEW", icon: UserRoundSearch, label: "Sync Users" },
   { icon: DatabaseSearch, label: "Table Lookup" },
-  { icon: BarChart3, label: "Reports" },
+  { icon: BarChart3, label: "Wizklub Report" },
   {
     children: [
       { icon: UserRound, label: "Profile", view: "Students" },
@@ -138,6 +146,7 @@ function canAccessView(role: DashboardRole | null, label: string) {
       label === "Sync Student" ||
       label === "Sync Users" ||
       label === "Table Lookup" ||
+      label === "Wizklub Report" ||
       label === "Students" ||
       label === "Book Lists" ||
       label === "Uniform Lists"
@@ -147,6 +156,7 @@ function canAccessView(role: DashboardRole | null, label: string) {
   if (role === "wizklub") {
     return (
       label === "Wizklub Payments" ||
+      label === "Wizklub Report" ||
       label === "Students" ||
       label === "Recipts" ||
       label === "Book Lists"
@@ -720,6 +730,7 @@ function Sidebar({
             const Icon = item.icon;
             const children = "children" in item ? item.children ?? [] : [];
             const hasChildren = children.length > 0;
+            const isOpen = isStudentsOpen;
             const isEnabled = hasChildren
               ? children.some((child) => canAccessView(role, child.view))
               : canAccessView(role, item.label);
@@ -731,7 +742,7 @@ function Sidebar({
               <div className="grid gap-1" key={item.label}>
                 <button
                   aria-disabled={!isEnabled}
-                  aria-expanded={hasChildren ? isStudentsOpen : undefined}
+                  aria-expanded={hasChildren ? isOpen : undefined}
                   className={cn(
                     "group flex h-[52px] items-center gap-4 rounded-[13px] border border-transparent px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                     isActive &&
@@ -771,13 +782,13 @@ function Sidebar({
                     <ChevronDown
                       className={cn(
                         "h-4 w-4 transition",
-                        isStudentsOpen && "rotate-180"
+                        isOpen && "rotate-180"
                       )}
                     />
                   ) : null}
                 </button>
 
-                {hasChildren && isStudentsOpen ? (
+                {hasChildren && isOpen ? (
                   <div className="ml-6 grid gap-1 border-l border-white/10 pl-3">
                     {children.map((child) => {
                       const ChildIcon = child.icon;
@@ -975,6 +986,7 @@ function MobileSidebar({
                   const Icon = item.icon;
                   const children = "children" in item ? item.children ?? [] : [];
                   const hasChildren = children.length > 0;
+                  const isExpanded = isStudentsOpen;
                   const isEnabled = hasChildren
                     ? children.some((child) => canAccessView(role, child.view))
                     : canAccessView(role, item.label);
@@ -986,7 +998,7 @@ function MobileSidebar({
                     <div className="grid gap-1" key={item.label}>
                       <button
                         aria-disabled={!isEnabled}
-                        aria-expanded={hasChildren ? isStudentsOpen : undefined}
+                        aria-expanded={hasChildren ? isExpanded : undefined}
                         className={cn(
                           "group flex h-[52px] items-center gap-4 rounded-[13px] border border-transparent px-4 text-[15px] font-medium transition duration-200 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 max-[760px]:h-11 max-[760px]:gap-3 max-[760px]:px-3 max-[760px]:text-[14px]",
                           isActive &&
@@ -1024,13 +1036,13 @@ function MobileSidebar({
                           <ChevronDown
                             className={cn(
                               "h-4 w-4 transition",
-                              isStudentsOpen && "rotate-180"
+                              isExpanded && "rotate-180"
                             )}
                           />
                         ) : null}
                       </button>
 
-                      {hasChildren && isStudentsOpen ? (
+                      {hasChildren && isExpanded ? (
                         <div className="ml-6 grid gap-1 border-l border-white/10 pl-3">
                           {children.map((child) => {
                             const ChildIcon = child.icon;
@@ -1316,6 +1328,7 @@ type SyncSectionResult = {
 };
 
 type MasterDataSection = {
+  disabled?: boolean;
   label: string;
   type: string;
 };
@@ -1372,7 +1385,7 @@ function SyncSectionsView() {
     { label: "Zones", type: "zones" },
     { label: "Boards", type: "boards" },
     { label: "Schools", type: "schools" },
-    { label: "Academic Year", type: "academic_year" },
+    { disabled: true, label: "Academic Year", type: "academic_year" },
     { label: "Academics", type: "academics" },
     { label: "School Classes", type: "school_classes" },
     { label: "Orientations", type: "orientations" },
@@ -1469,6 +1482,11 @@ function SyncSectionsView() {
   }
 
   async function handleSingleMasterDataSync(section: MasterDataSection) {
+    if (section.disabled) {
+      setSyncMessage(`${section.label} sync is currently disabled.`);
+      return;
+    }
+
     setSyncingAction("master");
     setSyncingMasterType(section.type);
     setSyncMessage(`Syncing ${section.label}...`);
@@ -1502,10 +1520,14 @@ function SyncSectionsView() {
 
     const syncedResults: SyncSectionResult[] = [];
 
-    for (const [index, section] of masterDataSections.entries()) {
+    const activeMasterDataSections = masterDataSections.filter(
+      (section) => !section.disabled
+    );
+
+    for (const [index, section] of activeMasterDataSections.entries()) {
       setSyncingMasterType(section.type);
       setSyncMessage(
-        `Syncing ${section.label} (${index + 1} of ${masterDataSections.length})...`
+        `Syncing ${section.label} (${index + 1} of ${activeMasterDataSections.length})...`
       );
 
       try {
@@ -1600,10 +1622,14 @@ function SyncSectionsView() {
               {masterDataSections.map((section) => (
                 <button
                   className="flex h-12 min-w-0 items-center gap-3 rounded-[6px] border border-[#263852] bg-[#061226]/72 px-4 text-left text-[12px] font-bold text-white transition hover:border-[#00E7B0]/42 hover:bg-[#00E7B0]/[.045] disabled:pointer-events-none disabled:opacity-60"
-                  disabled={syncingAction !== null}
+                  disabled={syncingAction !== null || section.disabled}
                   key={section.type}
                   onClick={() => handleSingleMasterDataSync(section)}
-                  title={`Sync ${section.label} using type=${section.type}`}
+                  title={
+                    section.disabled
+                      ? `${section.label} sync is disabled`
+                      : `Sync ${section.label} using type=${section.type}`
+                  }
                   type="button"
                 >
                   <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] bg-[#00E7B0]/10 text-[#00E7B0]">
@@ -2844,6 +2870,986 @@ function StatCardView({ stat, index }: { index: number; stat: StatCard }) {
         </div>
       </Card>
     </motion.div>
+  );
+}
+
+const wizklubDailyPayments = [
+  { date: "22 Jun", link1: 28, link2: 18 },
+  { date: "25 Jun", link1: 37, link2: 46 },
+  { date: "28 Jun", link1: 55, link2: 38 },
+  { date: "01 Jul", link1: 70, link2: 88 },
+  { date: "04 Jul", link1: 78, link2: 80 },
+  { date: "07 Jul", link1: 72, link2: 24 },
+  { date: "10 Jul", link1: 55, link2: 38 },
+  { date: "13 Jul", link1: 70, link2: 56 },
+  { date: "16 Jul", link1: 44, link2: 86 },
+  { date: "19 Jul", link1: 48, link2: 24 },
+  { date: "21 Jul", link1: 67, link2: 46 }
+];
+
+const wizklubTransactions = [
+  ["1", "SCS001254", "Rahul Kumar", "Grade 8 Book Kit", "850.00", "Link - 1", "21 Jul 2026, 11:20 AM", "TXN24568721", "Success", ""],
+  ["2", "SCS001255", "Priya Sharma", "Grade 10 Book Kit", "1,200.00", "Link - 2", "21 Jul 2026, 11:05 AM", "TXN24568722", "Success", ""],
+  ["3", "SCS001256", "Ajay Reddy", "Grade 9 Book Kit", "950.00", "Link - 1", "21 Jul 2026, 10:45 AM", "TXN24568723", "Success", ""],
+  ["4", "SCS001257", "Ananya Verma", "Grade 8 Book Kit", "850.00", "Link - 2", "21 Jul 2026, 10:30 AM", "TXN24568724", "Failed", ""],
+  ["5", "SCS001258", "Vikram Singh", "Grade 11 Book Kit", "1,350.00", "Link - 1", "21 Jul 2026, 10:15 AM", "TXN24568725", "Success", ""]
+];
+
+type WizklubReportRecord = {
+  addedOn: string;
+  admissionNo: string;
+  amount: number;
+  branchName: string;
+  id: string;
+  paymentLink: "Link - 1" | "Link - 2";
+  paymentStatus: string;
+  productName: string;
+  razorpayPaymentId: string;
+  requestUrl: string;
+  wkItemId: string;
+};
+
+type WizklubReportSummary = {
+  averageOrderValue: number;
+  dailyPayments: { date: string; label: string; link1: number; link2: number }[];
+  link1: { collection: number; students: number; transactions: number };
+  link2: { collection: number; students: number; transactions: number };
+  totalCollection: number;
+  totalPaymentLinks: number;
+  totalStudentsPaid: number;
+  totalTransactions: number;
+};
+
+type WizklubReportResponse = {
+  count: number;
+  data: WizklubReportRecord[];
+  message: string;
+  success: boolean;
+  summary: WizklubReportSummary;
+};
+
+const emptyWizklubReportSummary: WizklubReportSummary = {
+  averageOrderValue: 0,
+  dailyPayments: [],
+  link1: { collection: 0, students: 0, transactions: 0 },
+  link2: { collection: 0, students: 0, transactions: 0 },
+  totalCollection: 0,
+  totalPaymentLinks: 2,
+  totalStudentsPaid: 0,
+  totalTransactions: 0
+};
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en-IN").format(value);
+}
+
+function formatReportCurrency(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    currency: "INR",
+    maximumFractionDigits: 2,
+    style: "currency"
+  }).format(value);
+}
+
+function getShortProductName(value: string) {
+  return value.split(",")[0]?.trim() || "Wizklub Book Kit";
+}
+
+function getReportDateValue(value: string) {
+  const normalized = value.trim();
+  const match = normalized.match(/^(\d{1,2})-([A-Z]{3})-(\d{2})/i);
+
+  if (!match) {
+    const parsed = Date.parse(normalized);
+
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  const [, day, monthText, yearText] = match;
+  const months: Record<string, number> = {
+    APR: 3,
+    AUG: 7,
+    DEC: 11,
+    FEB: 1,
+    JAN: 0,
+    JUL: 6,
+    JUN: 5,
+    MAR: 2,
+    MAY: 4,
+    NOV: 10,
+    OCT: 9,
+    SEP: 8
+  };
+  const month = months[monthText.toUpperCase()];
+
+  return month === undefined
+    ? 0
+    : new Date(2000 + Number(yearText), month, Number(day)).getTime();
+}
+
+function getReportDateKeyFromValue(value: string) {
+  const timestamp = getReportDateValue(value);
+
+  if (!timestamp) {
+    return "";
+  }
+
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getReportDateLabelFromKey(dateKey: string) {
+  const date = new Date(`${dateKey}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return dateKey;
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short"
+  }).format(date);
+}
+
+function buildWizklubReportSummary(records: WizklubReportRecord[]): WizklubReportSummary {
+  const successfulRecords = records.filter(
+    (record) => statusClass(record.paymentStatus) === "success"
+  );
+  const successfulStudents = new Set(
+    successfulRecords.map((record) => record.admissionNo).filter(Boolean)
+  );
+  const link1Records = records.filter((record) => record.paymentLink === "Link - 1");
+  const link2Records = records.filter((record) => record.paymentLink === "Link - 2");
+  const link1Students = new Set(link1Records.map((record) => record.admissionNo).filter(Boolean));
+  const link2Students = new Set(link2Records.map((record) => record.admissionNo).filter(Boolean));
+  const totalCollection = successfulRecords.reduce((sum, record) => sum + record.amount, 0);
+  const dailyMap = new Map<string, { date: string; label: string; link1: number; link2: number }>();
+
+  for (const record of successfulRecords) {
+    const date = getReportDateKeyFromValue(record.addedOn);
+
+    if (!date) {
+      continue;
+    }
+
+    const item = dailyMap.get(date) || {
+      date,
+      label: getReportDateLabelFromKey(date),
+      link1: 0,
+      link2: 0
+    };
+
+    if (record.paymentLink === "Link - 2") {
+      item.link2 += 1;
+    } else {
+      item.link1 += 1;
+    }
+
+    dailyMap.set(date, item);
+  }
+
+  return {
+    averageOrderValue: successfulRecords.length
+      ? Math.round((totalCollection / successfulRecords.length) * 100) / 100
+      : 0,
+    dailyPayments: Array.from(dailyMap.values())
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .slice(-30),
+    link1: {
+      collection: link1Records
+        .filter((record) => statusClass(record.paymentStatus) === "success")
+        .reduce((sum, record) => sum + record.amount, 0),
+      students: link1Students.size,
+      transactions: link1Records.length
+    },
+    link2: {
+      collection: link2Records
+        .filter((record) => statusClass(record.paymentStatus) === "success")
+        .reduce((sum, record) => sum + record.amount, 0),
+      students: link2Students.size,
+      transactions: link2Records.length
+    },
+    totalCollection,
+    totalPaymentLinks: 2,
+    totalStudentsPaid: successfulStudents.size,
+    totalTransactions: records.length
+  };
+}
+
+function uniqueSortedValues(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort(
+    (left, right) => left.localeCompare(right)
+  );
+}
+
+function ReportSelect({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <button
+      className={cn(
+        "flex h-10 min-w-0 items-center justify-between gap-3 rounded-[6px] border border-[#263852] bg-[#07172D]/82 px-4 text-[12px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.045)] transition hover:border-[#00E7B0]/35",
+        className
+      )}
+      type="button"
+    >
+      <span className="truncate">{children}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#AFC0D9]" />
+    </button>
+  );
+}
+
+function ReportDropdown({
+  className,
+  onChange,
+  options,
+  value
+}: {
+  className?: string;
+  onChange: (value: string) => void;
+  options: { label: string; value: string }[];
+  value: string;
+}) {
+  return (
+    <div className={cn("relative min-w-0", className)}>
+      <select
+        className="h-10 w-full appearance-none truncate rounded-[6px] border border-[#263852] bg-[#07172D]/82 px-4 pr-9 text-[12px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.045)] outline-none transition hover:border-[#00E7B0]/35 focus:border-[#00E7B0]/55"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {options.map((option) => (
+          <option className="bg-[#07172D] text-white" key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#AFC0D9]" />
+    </div>
+  );
+}
+
+function WizklubReportStat({
+  accent,
+  icon: Icon,
+  label,
+  tone,
+  value
+}: {
+  accent: string;
+  icon: ElementType;
+  label: string;
+  tone: string;
+  value: string;
+}) {
+  return (
+    <Card className="relative h-[116px] min-w-0 overflow-hidden rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-4">
+      <div
+        className="absolute inset-0 opacity-35"
+        style={{ background: `radial-gradient(circle at 10% 10%, ${accent}, transparent 44%)` }}
+      />
+      <div className="relative z-10 flex h-full min-w-0 items-start gap-4">
+        <div
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-white shadow-[0_0_28px_rgba(0,231,176,.14)]"
+          style={{ background: `linear-gradient(135deg,${accent},rgba(255,255,255,.08))` }}
+        >
+          <Icon className="h-6 w-6" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[12px] font-semibold text-[#D8E4F7]">{label}</p>
+          <p className="mt-2 truncate text-[23px] font-bold leading-none text-white">
+            {value}
+          </p>
+          <p className="mt-3 text-[11px] font-medium text-[#AFC0D9]">
+            <span className="font-black text-[#22FF7A]">▲ {tone}</span> vs last month
+          </p>
+        </div>
+      </div>
+      <div className="absolute bottom-3 right-3 h-7 w-16 opacity-90">
+        <AreaChart
+          data={[4, 4, 5, 7, 6, 10, 8, 12, 11, 15].map((value) => ({ value }))}
+          height={28}
+          width={64}
+        >
+          <Area dataKey="value" fill="transparent" stroke={accent} strokeWidth={2.4} type="monotone" />
+        </AreaChart>
+      </div>
+    </Card>
+  );
+}
+
+function WizklubReportsView() {
+  const [reportData, setReportData] = useState<WizklubReportRecord[]>([]);
+  const [reportSummary, setReportSummary] = useState<WizklubReportSummary>(
+    emptyWizklubReportSummary
+  );
+  const [reportState, setReportState] = useState<LookupState>("loading");
+  const [reportMessage, setReportMessage] = useState("Loading Wizklub report...");
+  const [draftFilters, setDraftFilters] = useState({
+    admissionNo: "",
+    bookName: "",
+    branchName: "",
+    dateRange: "all",
+    paymentLink: "",
+    status: ""
+  });
+  const [appliedFilters, setAppliedFilters] = useState(draftFilters);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadReport() {
+      setReportState("loading");
+      setReportMessage("Loading Wizklub report...");
+
+      try {
+        const response = await fetch("/api/wizklub-books-report", { cache: "no-store" });
+        const result = (await response.json()) as Partial<WizklubReportResponse>;
+
+        if (!response.ok || !result.success || !result.summary || !Array.isArray(result.data)) {
+          throw new Error(result.message || "Unable to load Wizklub report.");
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setReportData(result.data);
+        setReportSummary(buildWizklubReportSummary(result.data));
+        setReportState("success");
+        setReportMessage(`Loaded ${formatCompactNumber(result.count || result.data.length)} records.`);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setReportData([]);
+        setReportSummary(emptyWizklubReportSummary);
+        setReportState("error");
+        setReportMessage(
+          error instanceof Error ? error.message : "Unable to load Wizklub report."
+        );
+      }
+    }
+
+    loadReport();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const branchOptions = useMemo(
+    () => uniqueSortedValues(reportData.map((record) => record.branchName)),
+    [reportData]
+  );
+  const bookOptions = useMemo(
+    () => uniqueSortedValues(reportData.map((record) => getShortProductName(record.productName))),
+    [reportData]
+  );
+  const filteredReportData = useMemo(() => {
+    const latestTimestamp = Math.max(
+      0,
+      ...reportData.map((record) => getReportDateValue(record.addedOn))
+    );
+    const now = latestTimestamp || Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    return reportData.filter((record) => {
+      const admissionNeedle = appliedFilters.admissionNo.trim().toLowerCase();
+      const bookName = getShortProductName(record.productName);
+      const status = statusClass(record.paymentStatus);
+      const dateValue = getReportDateValue(record.addedOn);
+
+      if (
+        admissionNeedle &&
+        !`${record.admissionNo} ${record.branchName} ${record.razorpayPaymentId} ${record.id}`
+          .toLowerCase()
+          .includes(admissionNeedle)
+      ) {
+        return false;
+      }
+
+      if (appliedFilters.branchName && record.branchName !== appliedFilters.branchName) {
+        return false;
+      }
+
+      if (appliedFilters.bookName && bookName !== appliedFilters.bookName) {
+        return false;
+      }
+
+      if (appliedFilters.paymentLink && record.paymentLink !== appliedFilters.paymentLink) {
+        return false;
+      }
+
+      if (appliedFilters.status && status !== appliedFilters.status) {
+        return false;
+      }
+
+      if (
+        appliedFilters.dateRange === "last7" &&
+        (!dateValue || dateValue < now - 6 * dayMs)
+      ) {
+        return false;
+      }
+
+      if (
+        appliedFilters.dateRange === "last30" &&
+        (!dateValue || dateValue < now - 29 * dayMs)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [appliedFilters, reportData]);
+  const filteredSummary = useMemo(
+    () => buildWizklubReportSummary(filteredReportData),
+    [filteredReportData]
+  );
+  const totalPages = Math.max(1, Math.ceil(filteredReportData.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = filteredReportData.length ? (safeCurrentPage - 1) * pageSize : 0;
+  const tableRows = filteredReportData.slice(startIndex, startIndex + pageSize);
+  const paginationItems = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, index) => String(index + 1));
+    }
+
+    if (safeCurrentPage <= 4) {
+      return ["1", "2", "3", "4", "5", "...", String(totalPages)];
+    }
+
+    if (safeCurrentPage >= totalPages - 3) {
+      return [
+        "1",
+        "...",
+        String(totalPages - 4),
+        String(totalPages - 3),
+        String(totalPages - 2),
+        String(totalPages - 1),
+        String(totalPages)
+      ];
+    }
+
+    return [
+      "1",
+      "...",
+      String(safeCurrentPage - 1),
+      String(safeCurrentPage),
+      String(safeCurrentPage + 1),
+      "...",
+      String(totalPages)
+    ];
+  }, [safeCurrentPage, totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [appliedFilters, pageSize]);
+
+  function updateDraftFilter(key: keyof typeof draftFilters, value: string) {
+    setDraftFilters((current) => ({
+      ...current,
+      [key]: value
+    }));
+  }
+
+  function handleApplyFilters() {
+    setAppliedFilters(draftFilters);
+  }
+
+  function handleResetFilters() {
+    const emptyFilters = {
+      admissionNo: "",
+      bookName: "",
+      branchName: "",
+      dateRange: "all",
+      paymentLink: "",
+      status: ""
+    };
+
+    setDraftFilters(emptyFilters);
+    setAppliedFilters(emptyFilters);
+  }
+
+  function createExportRows() {
+    return filteredReportData.map((record, index) => ({
+      "S.No.": index + 1,
+      "Admission No.": record.admissionNo,
+      "Branch Name": record.branchName,
+      "Book Name": getShortProductName(record.productName),
+      "Book Price": record.amount,
+      "Payment Link Used": record.paymentLink,
+      "Payment Date": record.addedOn,
+      "Payment ID": record.razorpayPaymentId || record.id,
+      "Request URL": record.requestUrl,
+      Status:
+        statusClass(record.paymentStatus) === "success"
+          ? "Success"
+          : statusClass(record.paymentStatus) === "failed"
+            ? "Failed"
+            : "Pending"
+    }));
+  }
+
+  function handleExportExcel() {
+    const worksheet = XLSX.utils.json_to_sheet(createExportRows());
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Wizklub Report");
+    XLSX.writeFile(workbook, "wizklub-report.xlsx");
+  }
+
+  function handleExportPdf() {
+    const rows = createExportRows();
+    const printableWindow = window.open("", "_blank", "noopener,noreferrer");
+
+    if (!printableWindow) {
+      setReportMessage("Please allow popups to export PDF.");
+      setReportState("error");
+      return;
+    }
+
+    printableWindow.document.write(`
+      <html>
+        <head>
+          <title>Wizklub Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; }
+            h1 { font-size: 20px; margin-bottom: 4px; }
+            p { color: #4b5563; font-size: 12px; margin-top: 0; }
+            table { border-collapse: collapse; width: 100%; font-size: 10px; }
+            th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; }
+            th { background: #eef2ff; }
+          </style>
+        </head>
+        <body>
+          <h1>Wizklub Report</h1>
+          <p>${rows.length} filtered records</p>
+          <table>
+            <thead>
+              <tr>${Object.keys(rows[0] || { "No Records": "" }).map((key) => `<th>${key}</th>`).join("")}</tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map(
+                  (row) =>
+                    `<tr>${Object.values(row)
+                      .map((value) => `<td>${String(value).replace(/</g, "&lt;")}</td>`)
+                      .join("")}</tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printableWindow.document.close();
+    printableWindow.focus();
+    printableWindow.print();
+  }
+
+  async function handleCopyPaymentLink(paymentLink: "Link - 1" | "Link - 2") {
+    const value =
+      paymentLink === "Link - 1" ? "/online-fee-payment" : "/online-fee-payments";
+
+    await navigator.clipboard?.writeText(value);
+    setReportMessage(`${paymentLink} copied: ${value}`);
+    setReportState("success");
+  }
+
+  const chartData = reportSummary.dailyPayments.length
+    ? filteredSummary.dailyPayments.map((item) => ({
+        date: item.label,
+        link1: item.link1,
+        link2: item.link2
+      }))
+    : wizklubDailyPayments;
+  const link1Successful = filteredReportData.filter(
+    (record) => record.paymentLink === "Link - 1" && statusClass(record.paymentStatus) === "success"
+  ).length;
+  const link2Successful = filteredReportData.filter(
+    (record) => record.paymentLink === "Link - 2" && statusClass(record.paymentStatus) === "success"
+  ).length;
+  const link1SuccessRate = filteredSummary.link1.transactions
+    ? `${Math.round((link1Successful / filteredSummary.link1.transactions) * 1000) / 10}%`
+    : "0%";
+  const link2SuccessRate = filteredSummary.link2.transactions
+    ? `${Math.round((link2Successful / filteredSummary.link2.transactions) * 1000) / 10}%`
+    : "0%";
+  const totalLinkStudents = filteredSummary.link1.students + filteredSummary.link2.students;
+  const link1Percentage = totalLinkStudents
+    ? Math.round((filteredSummary.link1.students / totalLinkStudents) * 100)
+    : 0;
+  const link2Percentage = totalLinkStudents ? 100 - link1Percentage : 0;
+
+  return (
+    <div className="mt-5 grid min-w-0 gap-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
+        <Button
+          className="h-10 rounded-[6px] px-4 text-[12px]"
+          disabled={!filteredReportData.length}
+          onClick={handleExportExcel}
+          type="button"
+          variant="ghost"
+        >
+          <FileText className="h-4 w-4 text-[#00E7B0]" />
+          Export Excel
+          <ChevronDown className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          className="h-10 rounded-[6px] px-4 text-[12px]"
+          disabled={!filteredReportData.length}
+          onClick={handleExportPdf}
+          type="button"
+          variant="ghost"
+        >
+          <FileText className="h-4 w-4 text-[#FF4D6D]" />
+          Export PDF
+          <ChevronDown className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      <Card className="grid gap-3 rounded-[8px] border-[#263852] bg-[#07172D]/74 p-3 lg:grid-cols-[220px_160px_170px_210px_150px_minmax(190px,1fr)_74px_112px]">
+        <ReportDropdown
+          onChange={(value) => updateDraftFilter("dateRange", value)}
+          options={[
+            { label: "All Dates", value: "all" },
+            { label: "Last 7 Days", value: "last7" },
+            { label: "Last 30 Days", value: "last30" }
+          ]}
+          value={draftFilters.dateRange}
+        />
+        <ReportDropdown
+          onChange={(value) => updateDraftFilter("branchName", value)}
+          options={[
+            { label: "All Branches", value: "" },
+            ...branchOptions.map((branch) => ({ label: branch, value: branch }))
+          ]}
+          value={draftFilters.branchName}
+        />
+        <ReportDropdown
+          onChange={(value) => updateDraftFilter("bookName", value)}
+          options={[
+            { label: "All Books", value: "" },
+            ...bookOptions.map((book) => ({ label: book, value: book }))
+          ]}
+          value={draftFilters.bookName}
+        />
+        <ReportDropdown
+          onChange={(value) => updateDraftFilter("paymentLink", value)}
+          options={[
+            { label: "All Payment Links", value: "" },
+            { label: "Book Payment Link - 1", value: "Link - 1" },
+            { label: "Book Payment Link - 2", value: "Link - 2" }
+          ]}
+          value={draftFilters.paymentLink}
+        />
+        <ReportDropdown
+          onChange={(value) => updateDraftFilter("status", value)}
+          options={[
+            { label: "All Status", value: "" },
+            { label: "Success", value: "success" },
+            { label: "Failed", value: "failed" },
+            { label: "Pending", value: "pending" }
+          ]}
+          value={draftFilters.status}
+        />
+        <div className="relative">
+          <Input
+            className="h-10 rounded-[6px] border-[#263852] bg-[#07172D]/82 pr-10 text-[12px]"
+            onChange={(event) => updateDraftFilter("admissionNo", event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                handleApplyFilters();
+              }
+            }}
+            placeholder="Search Admission No. / Name"
+            value={draftFilters.admissionNo}
+          />
+          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8CA3C7]" />
+        </div>
+        <Button
+          className="h-10 rounded-[6px] px-3 text-[12px]"
+          onClick={handleResetFilters}
+          type="button"
+          variant="ghost"
+        >
+          Reset
+        </Button>
+        <Button
+          className="h-10 rounded-[6px] px-3 text-[12px]"
+          onClick={handleApplyFilters}
+          type="button"
+        >
+          Apply Filters
+        </Button>
+      </Card>
+
+      {reportMessage ? (
+        <div
+          className={cn(
+            "rounded-[8px] border px-4 py-3 text-[13px] font-semibold",
+            reportState === "error" &&
+              "border-[#FF4D6D]/25 bg-[#FF4D6D]/10 text-[#FF6B7D]",
+            reportState === "loading" &&
+              "border-[#4D6FFF]/25 bg-[#4D6FFF]/10 text-[#8FB0FF]",
+            reportState === "success" &&
+              "border-[#00E7B0]/20 bg-[#00E7B0]/10 text-[#00E7B0]"
+          )}
+        >
+          {reportState === "loading" ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {reportMessage}
+            </span>
+          ) : (
+            reportMessage
+          )}
+        </div>
+      ) : null}
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <WizklubReportStat accent="#00D7E7" icon={Link} label="Total Payment Links" tone="2" value={formatCompactNumber(reportSummary.totalPaymentLinks)} />
+        <WizklubReportStat accent="#00E07D" icon={UserRoundSearch} label="Total Students Paid" tone="live" value={formatCompactNumber(reportSummary.totalStudentsPaid)} />
+        <WizklubReportStat accent="#315EFF" icon={IndianRupee} label="Total Collection" tone="live" value={formatReportCurrency(reportSummary.totalCollection)} />
+        <WizklubReportStat accent="#8B5CF6" icon={ShoppingBag} label="Total Transactions" tone="live" value={formatCompactNumber(reportSummary.totalTransactions)} />
+        <WizklubReportStat accent="#F59E0B" icon={Compass} label="Avg. Order Value" tone="live" value={formatReportCurrency(reportSummary.averageOrderValue)} />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(360px,.78fr)_minmax(0,1.12fr)]">
+        <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-[16px] font-bold text-white">Payment Link Usage <span className="font-semibold text-[#C7D2E4]">(Students)</span></h2>
+            <ReportSelect className="h-8 w-[112px] px-3">Students</ReportSelect>
+          </div>
+          <div className="mt-5 grid gap-5 md:grid-cols-[180px_1fr]">
+            <div
+              className="grid aspect-square place-items-center rounded-full p-8"
+              style={{
+                background: `conic-gradient(#00E7B0 0 ${link1Percentage}%, #315EFF ${link1Percentage}% 100%)`
+              }}
+            >
+              <div className="grid h-full w-full place-items-center rounded-full bg-[#07172D] text-[13px] font-bold text-white">
+                <span className="-ml-24 -mt-2 text-[#315EFF]">{link2Percentage}%</span>
+                <span className="-mr-24 -mt-8 text-[#00E7B0]">{link1Percentage}%</span>
+              </div>
+            </div>
+            <div className="grid content-center gap-3">
+              {[
+                ["#00E7B0", "Book Payment Link - 1", formatCompactNumber(reportSummary.link1.students), `${link1Percentage}% of total students`],
+                ["#315EFF", "Book Payment Link - 2", formatCompactNumber(reportSummary.link2.students), `${link2Percentage}% of total students`]
+              ].map(([color, title, count, subtitle]) => (
+                <div className="rounded-[8px] border border-[#263852] bg-[#07172D]/66 px-4 py-3" key={title}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: color }} />
+                      <span className="text-[13px] font-bold text-white">{title}</span>
+                    </div>
+                    <span className="text-[18px] font-bold text-white">{count}</span>
+                  </div>
+                  <p className="ml-6 mt-2 text-[12px] text-[#AFC0D9]">{subtitle}</p>
+                </div>
+              ))}
+              <div className="flex items-center justify-between rounded-[8px] border border-[#263852] bg-[#07172D]/66 px-4 py-3 text-[13px] font-bold text-white">
+                <span>Total Students</span>
+                <span className="text-[18px]">{formatCompactNumber(totalLinkStudents)}</span>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-[16px] font-bold text-white">Daily Student Payments <span className="font-semibold text-[#C7D2E4]">(By Link)</span></h2>
+            <ReportSelect className="h-8 w-[126px] px-3">Last 30 Days</ReportSelect>
+          </div>
+          <div className="mt-4 h-[230px]">
+            <ResponsiveContainer height="100%" width="100%">
+              <BarChart barGap={5} data={chartData}>
+                <CartesianGrid stroke="#263852" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" stroke="#AFC0D9" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#AFC0D9" tick={{ fontSize: 11 }} />
+                <Tooltip content={<MiniTooltip />} cursor={{ fill: "rgba(255,255,255,.03)" }} />
+                <Bar dataKey="link1" fill="#00E7B0" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="link2" fill="#315EFF" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[260px_1fr]">
+        <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-[15px] font-bold text-white"><Filter className="h-4 w-4" />Filters</h2>
+            <button
+              className="text-[12px] text-[#C7D2E4] transition hover:text-white"
+              onClick={handleResetFilters}
+              type="button"
+            >
+              Clear All
+            </button>
+          </div>
+          <label className="mb-3 block text-[12px] font-semibold text-white">
+            Admission No.
+            <Input
+              className="mt-2 h-9 rounded-[5px] border-[#263852] bg-[#07172D]/74 text-[12px]"
+              onChange={(event) => updateDraftFilter("admissionNo", event.target.value)}
+              placeholder="Enter admission no."
+              value={draftFilters.admissionNo}
+            />
+          </label>
+          <label className="mb-3 block text-[12px] font-semibold text-white">
+            Branch Name
+            <Input
+              className="mt-2 h-9 rounded-[5px] border-[#263852] bg-[#07172D]/74 text-[12px]"
+              onChange={(event) => updateDraftFilter("branchName", event.target.value)}
+              placeholder="Enter branch name"
+              value={draftFilters.branchName}
+            />
+          </label>
+          <label className="mb-3 block text-[12px] font-semibold text-white">
+            Book Name
+            <ReportDropdown
+              className="mt-2"
+              onChange={(value) => updateDraftFilter("bookName", value)}
+              options={[
+                { label: "All Books", value: "" },
+                ...bookOptions.map((book) => ({ label: book, value: book }))
+              ]}
+              value={draftFilters.bookName}
+            />
+          </label>
+          <div className="mb-3 text-[12px] font-semibold text-white">Payment Link</div>
+          <div className="mb-4 flex gap-5 text-[12px] text-white">
+            {[
+              ["Link - 1", "#00E7B0"],
+              ["Link - 2", "#315EFF"]
+            ].map(([link, color]) => (
+              <label className="flex cursor-pointer items-center gap-2" key={link}>
+                <input
+                  checked={!draftFilters.paymentLink || draftFilters.paymentLink === link}
+                  className="sr-only"
+                  onChange={() =>
+                    updateDraftFilter(
+                      "paymentLink",
+                      draftFilters.paymentLink === link ? "" : link
+                    )
+                  }
+                  type="checkbox"
+                />
+                <span
+                  className="grid h-3.5 w-3.5 place-items-center rounded-[3px] text-[10px]"
+                  style={{
+                    backgroundColor:
+                      !draftFilters.paymentLink || draftFilters.paymentLink === link
+                        ? color
+                        : "#263852",
+                    color: link === "Link - 1" ? "#02111D" : "#FFFFFF"
+                  }}
+                >
+                  ?
+                </span>
+                {link}
+              </label>
+            ))}
+          </div>
+          <label className="mb-5 block text-[12px] font-semibold text-white">
+            Payment Status
+            <ReportDropdown
+              className="mt-2"
+              onChange={(value) => updateDraftFilter("status", value)}
+              options={[
+                { label: "All Status", value: "" },
+                { label: "Success", value: "success" },
+                { label: "Failed", value: "failed" },
+                { label: "Pending", value: "pending" }
+              ]}
+              value={draftFilters.status}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <Button className="h-9 rounded-[6px] text-[12px]" onClick={handleApplyFilters} type="button">Apply</Button>
+            <Button className="h-9 rounded-[6px] text-[12px]" onClick={handleResetFilters} type="button" variant="ghost">Reset</Button>
+          </div>
+        </Card>
+
+        <div className="grid min-w-0 gap-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {[
+              ["#00E7B0", "Book Payment Link - 1", formatCompactNumber(reportSummary.link1.students), formatCompactNumber(reportSummary.link1.transactions), formatReportCurrency(reportSummary.link1.collection), link1SuccessRate],
+              ["#315EFF", "Book Payment Link - 2", formatCompactNumber(reportSummary.link2.students), formatCompactNumber(reportSummary.link2.transactions), formatReportCurrency(reportSummary.link2.collection), link2SuccessRate]
+            ].map(([color, title, students, transactions, collection, rate]) => (
+              <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.86),rgba(3,11,24,.64))] p-5" key={title}>
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-3 text-[17px] font-bold text-white"><span className="grid h-9 w-9 place-items-center rounded-full text-white" style={{ backgroundColor: color }}><Link className="h-5 w-5" /></span>{title}</h3>
+                  <Button className="h-8 rounded-[6px] px-3 text-[12px]" type="button" variant="ghost"><Copy className="h-3.5 w-3.5" />Copy</Button>
+                </div>
+                <div className="mt-4 grid grid-cols-4 gap-3 border-t border-white/8 pt-3">
+                  {["Students", "Transactions", "Collection", "Success Rate"].map((label, index) => (
+                    <div className="min-w-0 border-r border-white/8 last:border-r-0" key={label}>
+                      <p className="text-[12px] text-[#C7D2E4]">{label}</p>
+                      <p className="mt-1 truncate text-[18px] font-bold text-white">{[students, transactions, collection, rate][index]}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#1B3048]">
+                  <div className="h-full rounded-full" style={{ backgroundColor: color, width: rate }} />
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="overflow-hidden rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.86),rgba(3,11,24,.64))]">
+            <div className="flex flex-col gap-3 border-b border-[#263852] px-5 py-3 md:flex-row md:items-center md:justify-between">
+              <h2 className="flex items-center gap-3 text-[16px] font-bold text-white"><span className="grid h-6 w-6 place-items-center rounded-[4px] bg-[#315EFF]"><FileText className="h-4 w-4" /></span>Transaction Details</h2>
+              <div className="flex items-center gap-4 text-[12px] text-[#C7D2E4]">
+                <span>Showing 1 to {Math.min(10, reportData.length)} of {formatCompactNumber(reportData.length)} entries</span>
+                <ReportSelect className="h-8 w-[136px] px-3">10 per page</ReportSelect>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1020px] border-collapse text-left text-[12px]">
+                <thead className="text-white">
+                  <tr>{["S.No.", "Admission No.", "Branch Name", "Book Name", "Book Price", "Payment Link Used", "Payment Date", "Payment ID", "Status", "Action"].map((head) => <th className="border-b border-r border-[#263852] px-4 py-3 font-bold last:border-r-0" key={head}>{head}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {(tableRows.length ? tableRows.map((record, index) => [
+                    String(index + 1),
+                    record.admissionNo,
+                    record.branchName || "-",
+                    getShortProductName(record.productName),
+                    String(record.amount),
+                    record.paymentLink,
+                    record.addedOn,
+                    record.razorpayPaymentId || record.id,
+                    statusClass(record.paymentStatus) === "success" ? "Success" : statusClass(record.paymentStatus) === "failed" ? "Failed" : "Pending",
+                    ""
+                  ]) : wizklubTransactions).map((row) => (
+                    <tr className="text-[#D8E4F7]" key={`${row[1]}-${row[7]}`}>
+                      {row.map((cell, index) => (
+                        <td className="border-b border-r border-[#263852]/70 px-4 py-3 last:border-r-0" key={`${row[1]}-${index}`}>
+                          {index === 1 ? <span className="font-semibold text-[#00D7E7] underline">{cell}</span> : index === 4 ? formatReportCurrency(Number(String(cell).replace(/,/g, ""))) : index === 5 ? <span className={cn("rounded-[5px] px-3 py-1 font-bold text-white", cell.includes("1") ? "bg-[#008E53]" : "bg-[#315EFF]")}>{cell}</span> : index === 8 ? <span className={cn("rounded-[5px] px-3 py-1 font-bold", cell === "Success" ? "bg-[#006D48] text-[#22FF7A]" : cell === "Failed" ? "bg-[#661D25] text-[#FF6B7D]" : "bg-[#3B465C] text-[#D8E4F7]")}>{cell}</span> : index === 9 ? <Eye className="mx-auto h-4 w-4 text-[#C7D2E4]" /> : cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-center gap-3 px-5 py-3 text-[13px] text-white">
+              <Button className="h-8 w-10 rounded-[6px] px-0" type="button" variant="ghost"><ChevronLeft className="h-4 w-4" /></Button>
+              {["1", "2", "3", "4", "5", "...", "245"].map((page) => <span className={cn("grid h-8 min-w-8 place-items-center rounded-[6px] px-2", page === "1" && "border border-[#00E7B0] text-[#00E7B0]")} key={page}>{page}</span>)}
+              <Button className="h-8 w-10 rounded-[6px] px-0" type="button" variant="ghost"><ChevronRight className="h-4 w-4" /></Button>
+            </div>
+          </Card>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -8733,6 +9739,7 @@ export default function Home() {
   const isSyncSectionsView = activeView === "Sync Master";
   const isSyncStudentView = activeView === "Sync Student";
   const isSyncUsersView = activeView === "Sync Users";
+  const isReportView = activeView === "Wizklub Report";
   const isStudentsView = activeView === "Students";
   const isStudentBookListView = activeView === "Book Lists";
   const isUniformListsView = activeView === "Uniform Lists";
@@ -8750,6 +9757,8 @@ export default function Home() {
       ? "Student Sync"
     : isSyncUsersView
       ? "Sync Users"
+    : isReportView
+      ? activeView
       : isUniformListsView
         ? "Uniform Lists"
       : isStudentBookListView
@@ -8773,6 +9782,8 @@ export default function Home() {
       ? "Sync student and related history data from the external system."
     : isSyncUsersView
       ? "Sync users from external system by entering employee IDs."
+    : isReportView
+      ? "Track and analyze payment link usage, student purchases and collections."
       : isUniformListsView
         ? "View uniform kits and products available for the selected student."
       : isStudentBookListView
@@ -8796,6 +9807,8 @@ export default function Home() {
       ? "STUDENT SYNC"
     : isSyncUsersView
       ? "USER MANAGEMENT"
+    : isReportView
+      ? "WIZKLUB PAYMENTS"
       : isUniformListsView
         ? "STUDENTS > UNIFORM LISTS"
       : isStudentBookListView
@@ -9278,6 +10291,8 @@ export default function Home() {
           <StudentSyncView />
         ) : isSyncUsersView ? (
           <SyncUsersView />
+        ) : isReportView ? (
+          <WizklubReportsView />
         ) : isStudentsView ? (
           <StudentsView />
         ) : isStudentBookListView ? (

@@ -8,7 +8,6 @@ const allowedMasterDataTypes = new Set([
   "zones",
   "boards",
   "schools",
-  "academic_year",
   "academics",
   "school_classes",
   "orientations",
