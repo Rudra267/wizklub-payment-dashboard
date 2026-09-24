@@ -118,9 +118,9 @@ const navItems = [
   { icon: Landmark, label: "SED Payments" },
   { icon: RefreshCcw, label: "Sync Master" },
   { icon: GraduationCap, label: "Sync Student" },
-  { badge: "NEW", icon: UserRoundSearch, label: "Sync Users" },
+  { icon: UserRoundSearch, label: "Sync Users" },
   { icon: DatabaseSearch, label: "Table Lookup" },
-  { icon: BarChart3, label: "Wizklub Report" },
+  { badge: "NEW", icon: BarChart3, label: "Wizklub Report" },
   {
     children: [
       { icon: UserRound, label: "Profile", view: "Students" },
@@ -2873,28 +2873,6 @@ function StatCardView({ stat, index }: { index: number; stat: StatCard }) {
   );
 }
 
-const wizklubDailyPayments = [
-  { date: "22 Jun", link1: 28, link2: 18 },
-  { date: "25 Jun", link1: 37, link2: 46 },
-  { date: "28 Jun", link1: 55, link2: 38 },
-  { date: "01 Jul", link1: 70, link2: 88 },
-  { date: "04 Jul", link1: 78, link2: 80 },
-  { date: "07 Jul", link1: 72, link2: 24 },
-  { date: "10 Jul", link1: 55, link2: 38 },
-  { date: "13 Jul", link1: 70, link2: 56 },
-  { date: "16 Jul", link1: 44, link2: 86 },
-  { date: "19 Jul", link1: 48, link2: 24 },
-  { date: "21 Jul", link1: 67, link2: 46 }
-];
-
-const wizklubTransactions = [
-  ["1", "SCS001254", "Rahul Kumar", "Grade 8 Book Kit", "850.00", "Link - 1", "21 Jul 2026, 11:20 AM", "TXN24568721", "Success", ""],
-  ["2", "SCS001255", "Priya Sharma", "Grade 10 Book Kit", "1,200.00", "Link - 2", "21 Jul 2026, 11:05 AM", "TXN24568722", "Success", ""],
-  ["3", "SCS001256", "Ajay Reddy", "Grade 9 Book Kit", "950.00", "Link - 1", "21 Jul 2026, 10:45 AM", "TXN24568723", "Success", ""],
-  ["4", "SCS001257", "Ananya Verma", "Grade 8 Book Kit", "850.00", "Link - 2", "21 Jul 2026, 10:30 AM", "TXN24568724", "Failed", ""],
-  ["5", "SCS001258", "Vikram Singh", "Grade 11 Book Kit", "1,350.00", "Link - 1", "21 Jul 2026, 10:15 AM", "TXN24568725", "Success", ""]
-];
-
 type WizklubReportRecord = {
   addedOn: string;
   admissionNo: string;
@@ -2928,17 +2906,6 @@ type WizklubReportResponse = {
   summary: WizklubReportSummary;
 };
 
-const emptyWizklubReportSummary: WizklubReportSummary = {
-  averageOrderValue: 0,
-  dailyPayments: [],
-  link1: { collection: 0, students: 0, transactions: 0 },
-  link2: { collection: 0, students: 0, transactions: 0 },
-  totalCollection: 0,
-  totalPaymentLinks: 2,
-  totalStudentsPaid: 0,
-  totalTransactions: 0
-};
-
 function formatCompactNumber(value: number) {
   return new Intl.NumberFormat("en-IN").format(value);
 }
@@ -2953,6 +2920,14 @@ function formatReportCurrency(value: number) {
 
 function getShortProductName(value: string) {
   return value.split(",")[0]?.trim() || "Wizklub Book Kit";
+}
+
+function getPaymentLinkUrl(paymentLink: "Link - 1" | "Link - 2") {
+  return paymentLink === "Link - 1" ? "/online-fee-payment" : "/online-fee-payments";
+}
+
+function getPaymentLinkLabel(paymentLink: "Link - 1" | "Link - 2") {
+  return `${paymentLink} (${getPaymentLinkUrl(paymentLink)})`;
 }
 
 function getReportDateValue(value: string) {
@@ -2985,6 +2960,38 @@ function getReportDateValue(value: string) {
   return month === undefined
     ? 0
     : new Date(2000 + Number(yearText), month, Number(day)).getTime();
+}
+
+function getStartOfReportDay(timestamp: number) {
+  const date = new Date(timestamp);
+
+  date.setHours(0, 0, 0, 0);
+
+  return date.getTime();
+}
+
+function isTimestampInReportRange(timestamp: number, range: string) {
+  if (!timestamp || range === "all") {
+    return range === "all";
+  }
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const todayStart = getStartOfReportDay(Date.now());
+  const recordDay = getStartOfReportDay(timestamp);
+
+  if (range === "today") {
+    return recordDay === todayStart;
+  }
+
+  if (range === "last7") {
+    return recordDay >= todayStart - 6 * dayMs;
+  }
+
+  if (range === "last30") {
+    return recordDay >= todayStart - 29 * dayMs;
+  }
+
+  return true;
 }
 
 function getReportDateKeyFromValue(value: string) {
@@ -3024,6 +3031,7 @@ function buildWizklubReportSummary(records: WizklubReportRecord[]): WizklubRepor
   );
   const link1Records = records.filter((record) => record.paymentLink === "Link - 1");
   const link2Records = records.filter((record) => record.paymentLink === "Link - 2");
+  const paymentLinks = new Set(records.map((record) => record.paymentLink).filter(Boolean));
   const link1Students = new Set(link1Records.map((record) => record.admissionNo).filter(Boolean));
   const link2Students = new Set(link2Records.map((record) => record.admissionNo).filter(Boolean));
   const totalCollection = successfulRecords.reduce((sum, record) => sum + record.amount, 0);
@@ -3074,7 +3082,7 @@ function buildWizklubReportSummary(records: WizklubReportRecord[]): WizklubRepor
       transactions: link2Records.length
     },
     totalCollection,
-    totalPaymentLinks: 2,
+    totalPaymentLinks: paymentLinks.size,
     totalStudentsPaid: successfulStudents.size,
     totalTransactions: records.length
   };
@@ -3103,11 +3111,13 @@ function ReportSelect({ children, className }: { children: ReactNode; className?
 
 function ReportDropdown({
   className,
+  disabled = false,
   onChange,
   options,
   value
 }: {
   className?: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
   options: { label: string; value: string }[];
   value: string;
@@ -3115,7 +3125,8 @@ function ReportDropdown({
   return (
     <div className={cn("relative min-w-0", className)}>
       <select
-        className="h-10 w-full appearance-none truncate rounded-[6px] border border-[#263852] bg-[#07172D]/82 px-4 pr-9 text-[12px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.045)] outline-none transition hover:border-[#00E7B0]/35 focus:border-[#00E7B0]/55"
+        className="h-10 w-full appearance-none truncate rounded-[6px] border border-[#263852] bg-[#07172D]/82 px-4 pr-9 text-[12px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.045)] outline-none transition hover:border-[#00E7B0]/35 focus:border-[#00E7B0]/55 disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -3181,9 +3192,6 @@ function WizklubReportStat({
 
 function WizklubReportsView() {
   const [reportData, setReportData] = useState<WizklubReportRecord[]>([]);
-  const [reportSummary, setReportSummary] = useState<WizklubReportSummary>(
-    emptyWizklubReportSummary
-  );
   const [reportState, setReportState] = useState<LookupState>("loading");
   const [reportMessage, setReportMessage] = useState("Loading Wizklub report...");
   const [draftFilters, setDraftFilters] = useState({
@@ -3195,6 +3203,8 @@ function WizklubReportsView() {
     status: ""
   });
   const [appliedFilters, setAppliedFilters] = useState(draftFilters);
+  const [chartDateRange, setChartDateRange] = useState("last30");
+  const [tableSearch, setTableSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -3218,7 +3228,6 @@ function WizklubReportsView() {
         }
 
         setReportData(result.data);
-        setReportSummary(buildWizklubReportSummary(result.data));
         setReportState("success");
         setReportMessage(`Loaded ${formatCompactNumber(result.count || result.data.length)} records.`);
       } catch (error) {
@@ -3227,7 +3236,6 @@ function WizklubReportsView() {
         }
 
         setReportData([]);
-        setReportSummary(emptyWizklubReportSummary);
         setReportState("error");
         setReportMessage(
           error instanceof Error ? error.message : "Unable to load Wizklub report."
@@ -3251,29 +3259,15 @@ function WizklubReportsView() {
     [reportData]
   );
   const filteredReportData = useMemo(() => {
-    const latestTimestamp = Math.max(
-      0,
-      ...reportData.map((record) => getReportDateValue(record.addedOn))
-    );
-    const now = latestTimestamp || Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-
     return reportData.filter((record) => {
-      const admissionNeedle = appliedFilters.admissionNo.trim().toLowerCase();
       const bookName = getShortProductName(record.productName);
       const status = statusClass(record.paymentStatus);
       const dateValue = getReportDateValue(record.addedOn);
 
       if (
-        admissionNeedle &&
-        !`${record.admissionNo} ${record.branchName} ${record.razorpayPaymentId} ${record.id}`
-          .toLowerCase()
-          .includes(admissionNeedle)
+        appliedFilters.branchName &&
+        !record.branchName.toLowerCase().includes(appliedFilters.branchName.toLowerCase())
       ) {
-        return false;
-      }
-
-      if (appliedFilters.branchName && record.branchName !== appliedFilters.branchName) {
         return false;
       }
 
@@ -3289,31 +3283,35 @@ function WizklubReportsView() {
         return false;
       }
 
-      if (
-        appliedFilters.dateRange === "last7" &&
-        (!dateValue || dateValue < now - 6 * dayMs)
-      ) {
-        return false;
-      }
-
-      if (
-        appliedFilters.dateRange === "last30" &&
-        (!dateValue || dateValue < now - 29 * dayMs)
-      ) {
+      if (!isTimestampInReportRange(dateValue, appliedFilters.dateRange)) {
         return false;
       }
 
       return true;
     });
   }, [appliedFilters, reportData]);
+  const tableFilteredReportData = useMemo(() => {
+    const searchNeedle = tableSearch.trim().toLowerCase();
+
+    if (!searchNeedle) {
+      return filteredReportData;
+    }
+
+    return filteredReportData.filter((record) =>
+      `${record.admissionNo} ${record.branchName} ${record.productName} ${record.razorpayPaymentId} ${record.id}`
+        .toLowerCase()
+        .includes(searchNeedle)
+    );
+  }, [filteredReportData, tableSearch]);
   const filteredSummary = useMemo(
     () => buildWizklubReportSummary(filteredReportData),
     [filteredReportData]
   );
-  const totalPages = Math.max(1, Math.ceil(filteredReportData.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(tableFilteredReportData.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
-  const startIndex = filteredReportData.length ? (safeCurrentPage - 1) * pageSize : 0;
-  const tableRows = filteredReportData.slice(startIndex, startIndex + pageSize);
+  const startIndex = tableFilteredReportData.length ? (safeCurrentPage - 1) * pageSize : 0;
+  const tableRows = tableFilteredReportData.slice(startIndex, startIndex + pageSize);
+  const endIndex = Math.min(startIndex + tableRows.length, tableFilteredReportData.length);
   const paginationItems = useMemo(() => {
     if (totalPages <= 7) {
       return Array.from({ length: totalPages }, (_, index) => String(index + 1));
@@ -3348,7 +3346,7 @@ function WizklubReportsView() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [appliedFilters, pageSize]);
+  }, [appliedFilters, pageSize, tableSearch]);
 
   function updateDraftFilter(key: keyof typeof draftFilters, value: string) {
     setDraftFilters((current) => ({
@@ -3373,6 +3371,8 @@ function WizklubReportsView() {
 
     setDraftFilters(emptyFilters);
     setAppliedFilters(emptyFilters);
+    setChartDateRange("last30");
+    setTableSearch("");
   }
 
   function createExportRows() {
@@ -3403,71 +3403,29 @@ function WizklubReportsView() {
     XLSX.writeFile(workbook, "wizklub-report.xlsx");
   }
 
-  function handleExportPdf() {
-    const rows = createExportRows();
-    const printableWindow = window.open("", "_blank", "noopener,noreferrer");
-
-    if (!printableWindow) {
-      setReportMessage("Please allow popups to export PDF.");
-      setReportState("error");
-      return;
-    }
-
-    printableWindow.document.write(`
-      <html>
-        <head>
-          <title>Wizklub Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; color: #111827; }
-            h1 { font-size: 20px; margin-bottom: 4px; }
-            p { color: #4b5563; font-size: 12px; margin-top: 0; }
-            table { border-collapse: collapse; width: 100%; font-size: 10px; }
-            th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; }
-            th { background: #eef2ff; }
-          </style>
-        </head>
-        <body>
-          <h1>Wizklub Report</h1>
-          <p>${rows.length} filtered records</p>
-          <table>
-            <thead>
-              <tr>${Object.keys(rows[0] || { "No Records": "" }).map((key) => `<th>${key}</th>`).join("")}</tr>
-            </thead>
-            <tbody>
-              ${rows
-                .map(
-                  (row) =>
-                    `<tr>${Object.values(row)
-                      .map((value) => `<td>${String(value).replace(/</g, "&lt;")}</td>`)
-                      .join("")}</tr>`
-                )
-                .join("")}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `);
-    printableWindow.document.close();
-    printableWindow.focus();
-    printableWindow.print();
-  }
-
   async function handleCopyPaymentLink(paymentLink: "Link - 1" | "Link - 2") {
-    const value =
-      paymentLink === "Link - 1" ? "/online-fee-payment" : "/online-fee-payments";
+    const value = getPaymentLinkUrl(paymentLink);
 
     await navigator.clipboard?.writeText(value);
     setReportMessage(`${paymentLink} copied: ${value}`);
     setReportState("success");
   }
 
-  const chartData = reportSummary.dailyPayments.length
-    ? filteredSummary.dailyPayments.map((item) => ({
-        date: item.label,
-        link1: item.link1,
-        link2: item.link2
-      }))
-    : wizklubDailyPayments;
+  const chartSummary = useMemo(
+    () =>
+      buildWizklubReportSummary(
+        filteredReportData.filter((record) =>
+          isTimestampInReportRange(getReportDateValue(record.addedOn), chartDateRange)
+        )
+      ),
+    [chartDateRange, filteredReportData]
+  );
+  const chartData = chartSummary.dailyPayments.map((item) => ({
+    date: item.label,
+    link1: item.link1,
+    link2: item.link2
+  }));
+  const hasChartData = chartData.some((item) => item.link1 || item.link2);
   const link1Successful = filteredReportData.filter(
     (record) => record.paymentLink === "Link - 1" && statusClass(record.paymentStatus) === "success"
   ).length;
@@ -3485,6 +3443,7 @@ function WizklubReportsView() {
     ? Math.round((filteredSummary.link1.students / totalLinkStudents) * 100)
     : 0;
   const link2Percentage = totalLinkStudents ? 100 - link1Percentage : 0;
+  const isReportLoading = reportState === "loading";
 
   return (
     <div className="mt-5 grid min-w-0 gap-4">
@@ -3500,30 +3459,22 @@ function WizklubReportsView() {
           Export Excel
           <ChevronDown className="h-3.5 w-3.5" />
         </Button>
-        <Button
-          className="h-10 rounded-[6px] px-4 text-[12px]"
-          disabled={!filteredReportData.length}
-          onClick={handleExportPdf}
-          type="button"
-          variant="ghost"
-        >
-          <FileText className="h-4 w-4 text-[#FF4D6D]" />
-          Export PDF
-          <ChevronDown className="h-3.5 w-3.5" />
-        </Button>
       </div>
 
-      <Card className="grid gap-3 rounded-[8px] border-[#263852] bg-[#07172D]/74 p-3 lg:grid-cols-[220px_160px_170px_210px_150px_minmax(190px,1fr)_74px_112px]">
+      <Card className="grid gap-3 rounded-[8px] border-[#263852] bg-[#07172D]/74 p-3 lg:grid-cols-[220px_180px_180px_240px_160px_74px_112px]">
         <ReportDropdown
+          disabled={isReportLoading}
           onChange={(value) => updateDraftFilter("dateRange", value)}
           options={[
             { label: "All Dates", value: "all" },
+            { label: "Today", value: "today" },
             { label: "Last 7 Days", value: "last7" },
             { label: "Last 30 Days", value: "last30" }
           ]}
           value={draftFilters.dateRange}
         />
         <ReportDropdown
+          disabled={isReportLoading}
           onChange={(value) => updateDraftFilter("branchName", value)}
           options={[
             { label: "All Branches", value: "" },
@@ -3532,6 +3483,7 @@ function WizklubReportsView() {
           value={draftFilters.branchName}
         />
         <ReportDropdown
+          disabled={isReportLoading}
           onChange={(value) => updateDraftFilter("bookName", value)}
           options={[
             { label: "All Books", value: "" },
@@ -3540,15 +3492,17 @@ function WizklubReportsView() {
           value={draftFilters.bookName}
         />
         <ReportDropdown
+          disabled={isReportLoading}
           onChange={(value) => updateDraftFilter("paymentLink", value)}
           options={[
             { label: "All Payment Links", value: "" },
-            { label: "Book Payment Link - 1", value: "Link - 1" },
-            { label: "Book Payment Link - 2", value: "Link - 2" }
+            { label: `Book Payment ${getPaymentLinkLabel("Link - 1")}`, value: "Link - 1" },
+            { label: `Book Payment ${getPaymentLinkLabel("Link - 2")}`, value: "Link - 2" }
           ]}
           value={draftFilters.paymentLink}
         />
         <ReportDropdown
+          disabled={isReportLoading}
           onChange={(value) => updateDraftFilter("status", value)}
           options={[
             { label: "All Status", value: "" },
@@ -3558,22 +3512,9 @@ function WizklubReportsView() {
           ]}
           value={draftFilters.status}
         />
-        <div className="relative">
-          <Input
-            className="h-10 rounded-[6px] border-[#263852] bg-[#07172D]/82 pr-10 text-[12px]"
-            onChange={(event) => updateDraftFilter("admissionNo", event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                handleApplyFilters();
-              }
-            }}
-            placeholder="Search Admission No. / Name"
-            value={draftFilters.admissionNo}
-          />
-          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8CA3C7]" />
-        </div>
         <Button
           className="h-10 rounded-[6px] px-3 text-[12px]"
+          disabled={isReportLoading}
           onClick={handleResetFilters}
           type="button"
           variant="ghost"
@@ -3582,6 +3523,7 @@ function WizklubReportsView() {
         </Button>
         <Button
           className="h-10 rounded-[6px] px-3 text-[12px]"
+          disabled={isReportLoading}
           onClick={handleApplyFilters}
           type="button"
         >
@@ -3612,42 +3554,79 @@ function WizklubReportsView() {
         </div>
       ) : null}
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <WizklubReportStat accent="#00D7E7" icon={Link} label="Total Payment Links" tone="2" value={formatCompactNumber(reportSummary.totalPaymentLinks)} />
-        <WizklubReportStat accent="#00E07D" icon={UserRoundSearch} label="Total Students Paid" tone="live" value={formatCompactNumber(reportSummary.totalStudentsPaid)} />
-        <WizklubReportStat accent="#315EFF" icon={IndianRupee} label="Total Collection" tone="live" value={formatReportCurrency(reportSummary.totalCollection)} />
-        <WizklubReportStat accent="#8B5CF6" icon={ShoppingBag} label="Total Transactions" tone="live" value={formatCompactNumber(reportSummary.totalTransactions)} />
-        <WizklubReportStat accent="#F59E0B" icon={Compass} label="Avg. Order Value" tone="live" value={formatReportCurrency(reportSummary.averageOrderValue)} />
-      </section>
+      {isReportLoading ? (
+        <Card className="overflow-hidden rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-5">
+          <div className="flex items-center gap-3 text-white">
+            <span className="grid h-11 w-11 place-items-center rounded-full bg-[#00E7B0]/12 text-[#00E7B0]">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </span>
+            <div>
+              <p className="text-[15px] font-bold">Loading API data</p>
+              <p className="mt-1 text-[12px] text-[#AFC0D9]">
+                Fetching live Wizklub payment records. Dummy data is not shown.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div className="h-[116px] animate-pulse rounded-[8px] border border-[#263852] bg-[#07172D]/70 p-4" key={index}>
+                <div className="h-10 w-10 rounded-full bg-[#20324C]" />
+                <div className="mt-4 h-3 w-24 rounded-full bg-[#20324C]" />
+                <div className="mt-3 h-5 w-32 rounded-full bg-[#2A4264]" />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
+      {!isReportLoading ? (
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <WizklubReportStat accent="#00D7E7" icon={Link} label="Total Payment Links" tone="filtered" value={formatCompactNumber(filteredSummary.totalPaymentLinks)} />
+          <WizklubReportStat accent="#00E07D" icon={UserRoundSearch} label="Total Students Paid" tone="filtered" value={formatCompactNumber(filteredSummary.totalStudentsPaid)} />
+          <WizklubReportStat accent="#315EFF" icon={IndianRupee} label="Total Collection" tone="filtered" value={formatReportCurrency(filteredSummary.totalCollection)} />
+          <WizklubReportStat accent="#8B5CF6" icon={ShoppingBag} label="Total Transactions" tone="filtered" value={formatCompactNumber(filteredSummary.totalTransactions)} />
+          <WizklubReportStat accent="#F59E0B" icon={Compass} label="Avg. Order Value" tone="filtered" value={formatReportCurrency(filteredSummary.averageOrderValue)} />
+        </section>
+      ) : null}
+
+      {!isReportLoading ? (
+        <>
       <section className="grid gap-4 xl:grid-cols-[minmax(360px,.78fr)_minmax(0,1.12fr)]">
         <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-5">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[16px] font-bold text-white">Payment Link Usage <span className="font-semibold text-[#C7D2E4]">(Students)</span></h2>
-            <ReportSelect className="h-8 w-[112px] px-3">Students</ReportSelect>
+            <h2 className="text-[16px] font-bold text-white">Payment Link Usage <span className="font-semibold text-[#C7D2E4]">(Parents)</span></h2>
           </div>
           <div className="mt-5 grid gap-5 md:grid-cols-[180px_1fr]">
             <div
               className="grid aspect-square place-items-center rounded-full p-8"
               style={{
-                background: `conic-gradient(#00E7B0 0 ${link1Percentage}%, #315EFF ${link1Percentage}% 100%)`
+                background: totalLinkStudents
+                  ? `conic-gradient(#00E7B0 0 ${link1Percentage}%, #315EFF ${link1Percentage}% 100%)`
+                  : "conic-gradient(#263852 0 100%)"
               }}
             >
-              <div className="grid h-full w-full place-items-center rounded-full bg-[#07172D] text-[13px] font-bold text-white">
-                <span className="-ml-24 -mt-2 text-[#315EFF]">{link2Percentage}%</span>
-                <span className="-mr-24 -mt-8 text-[#00E7B0]">{link1Percentage}%</span>
+              <div className="grid h-full w-full place-items-center rounded-full bg-[#07172D] text-center">
+                <div>
+                  <p className="text-[11px] font-semibold text-[#AFC0D9]">Parents</p>
+                  <p className="mt-1 text-[22px] font-bold text-white">
+                    {formatCompactNumber(totalLinkStudents)}
+                  </p>
+                </div>
               </div>
             </div>
             <div className="grid content-center gap-3">
               {[
-                ["#00E7B0", "Book Payment Link - 1", formatCompactNumber(reportSummary.link1.students), `${link1Percentage}% of total students`],
-                ["#315EFF", "Book Payment Link - 2", formatCompactNumber(reportSummary.link2.students), `${link2Percentage}% of total students`]
-              ].map(([color, title, count, subtitle]) => (
+                ["#00E7B0", "Book Payment Link - 1", getPaymentLinkUrl("Link - 1"), formatCompactNumber(filteredSummary.link1.students), `${link1Percentage}% of total students`],
+                ["#315EFF", "Book Payment Link - 2", getPaymentLinkUrl("Link - 2"), formatCompactNumber(filteredSummary.link2.students), `${link2Percentage}% of total students`]
+              ].map(([color, title, url, count, subtitle]) => (
                 <div className="rounded-[8px] border border-[#263852] bg-[#07172D]/66 px-4 py-3" key={title}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: color }} />
-                      <span className="text-[13px] font-bold text-white">{title}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-bold text-white">{title}</span>
+                        <span className="block truncate text-[11px] font-semibold text-[#8CA3C7]">{url}</span>
+                      </span>
                     </div>
                     <span className="text-[18px] font-bold text-white">{count}</span>
                   </div>
@@ -3665,129 +3644,82 @@ function WizklubReportsView() {
         <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-5">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-[16px] font-bold text-white">Daily Student Payments <span className="font-semibold text-[#C7D2E4]">(By Link)</span></h2>
-            <ReportSelect className="h-8 w-[126px] px-3">Last 30 Days</ReportSelect>
+            <ReportDropdown
+              className="w-[142px]"
+              onChange={setChartDateRange}
+              options={[
+                { label: "Today", value: "today" },
+                { label: "Last 7 Days", value: "last7" },
+                { label: "Last 30 Days", value: "last30" }
+              ]}
+              value={chartDateRange}
+            />
           </div>
-          <div className="mt-4 h-[230px]">
-            <ResponsiveContainer height="100%" width="100%">
-              <BarChart barGap={5} data={chartData}>
-                <CartesianGrid stroke="#263852" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" stroke="#AFC0D9" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#AFC0D9" tick={{ fontSize: 11 }} />
-                <Tooltip content={<MiniTooltip />} cursor={{ fill: "rgba(255,255,255,.03)" }} />
-                <Bar dataKey="link1" fill="#00E7B0" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="link2" fill="#315EFF" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mt-3 flex flex-wrap gap-4 text-[12px] font-semibold text-[#C7D2E4]">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#00E7B0]" />
+              {getPaymentLinkLabel("Link - 1")}
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#315EFF]" />
+              {getPaymentLinkLabel("Link - 2")}
+            </span>
+          </div>
+          <div className="relative mt-4 h-[250px]">
+            {hasChartData ? (
+              <ResponsiveContainer height="100%" width="100%">
+                <BarChart barCategoryGap="32%" barGap={5} data={chartData} margin={{ bottom: 8, left: 0, right: 8, top: 8 }}>
+                  <CartesianGrid stroke="#263852" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" interval="preserveStartEnd" minTickGap={12} stroke="#AFC0D9" tick={{ fontSize: 11 }} />
+                  <YAxis allowDecimals={false} stroke="#AFC0D9" tick={{ fontSize: 11 }} width={34} />
+                  <Tooltip content={<MiniTooltip />} cursor={{ fill: "rgba(255,255,255,.03)" }} />
+                  <Bar dataKey="link1" fill="#00E7B0" maxBarSize={24} radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="link2" fill="#315EFF" maxBarSize={24} radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="grid h-full place-items-center rounded-[8px] border border-dashed border-[#263852] bg-[#07172D]/44 text-center">
+                <div>
+                  <p className="text-[14px] font-bold text-white">No chart data</p>
+                  <p className="mt-2 text-[12px] text-[#AFC0D9]">
+                    No successful student payments found for this range.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[260px_1fr]">
-        <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.64))] p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-[15px] font-bold text-white"><Filter className="h-4 w-4" />Filters</h2>
-            <button
-              className="text-[12px] text-[#C7D2E4] transition hover:text-white"
-              onClick={handleResetFilters}
-              type="button"
-            >
-              Clear All
-            </button>
-          </div>
-          <label className="mb-3 block text-[12px] font-semibold text-white">
-            Admission No.
-            <Input
-              className="mt-2 h-9 rounded-[5px] border-[#263852] bg-[#07172D]/74 text-[12px]"
-              onChange={(event) => updateDraftFilter("admissionNo", event.target.value)}
-              placeholder="Enter admission no."
-              value={draftFilters.admissionNo}
-            />
-          </label>
-          <label className="mb-3 block text-[12px] font-semibold text-white">
-            Branch Name
-            <Input
-              className="mt-2 h-9 rounded-[5px] border-[#263852] bg-[#07172D]/74 text-[12px]"
-              onChange={(event) => updateDraftFilter("branchName", event.target.value)}
-              placeholder="Enter branch name"
-              value={draftFilters.branchName}
-            />
-          </label>
-          <label className="mb-3 block text-[12px] font-semibold text-white">
-            Book Name
-            <ReportDropdown
-              className="mt-2"
-              onChange={(value) => updateDraftFilter("bookName", value)}
-              options={[
-                { label: "All Books", value: "" },
-                ...bookOptions.map((book) => ({ label: book, value: book }))
-              ]}
-              value={draftFilters.bookName}
-            />
-          </label>
-          <div className="mb-3 text-[12px] font-semibold text-white">Payment Link</div>
-          <div className="mb-4 flex gap-5 text-[12px] text-white">
-            {[
-              ["Link - 1", "#00E7B0"],
-              ["Link - 2", "#315EFF"]
-            ].map(([link, color]) => (
-              <label className="flex cursor-pointer items-center gap-2" key={link}>
-                <input
-                  checked={!draftFilters.paymentLink || draftFilters.paymentLink === link}
-                  className="sr-only"
-                  onChange={() =>
-                    updateDraftFilter(
-                      "paymentLink",
-                      draftFilters.paymentLink === link ? "" : link
-                    )
-                  }
-                  type="checkbox"
-                />
-                <span
-                  className="grid h-3.5 w-3.5 place-items-center rounded-[3px] text-[10px]"
-                  style={{
-                    backgroundColor:
-                      !draftFilters.paymentLink || draftFilters.paymentLink === link
-                        ? color
-                        : "#263852",
-                    color: link === "Link - 1" ? "#02111D" : "#FFFFFF"
-                  }}
-                >
-                  ?
-                </span>
-                {link}
-              </label>
-            ))}
-          </div>
-          <label className="mb-5 block text-[12px] font-semibold text-white">
-            Payment Status
-            <ReportDropdown
-              className="mt-2"
-              onChange={(value) => updateDraftFilter("status", value)}
-              options={[
-                { label: "All Status", value: "" },
-                { label: "Success", value: "success" },
-                { label: "Failed", value: "failed" },
-                { label: "Pending", value: "pending" }
-              ]}
-              value={draftFilters.status}
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <Button className="h-9 rounded-[6px] text-[12px]" onClick={handleApplyFilters} type="button">Apply</Button>
-            <Button className="h-9 rounded-[6px] text-[12px]" onClick={handleResetFilters} type="button" variant="ghost">Reset</Button>
-          </div>
-        </Card>
-
+      <section className="grid gap-4">
         <div className="grid min-w-0 gap-4">
           <div className="grid gap-4 lg:grid-cols-2">
             {[
-              ["#00E7B0", "Book Payment Link - 1", formatCompactNumber(reportSummary.link1.students), formatCompactNumber(reportSummary.link1.transactions), formatReportCurrency(reportSummary.link1.collection), link1SuccessRate],
-              ["#315EFF", "Book Payment Link - 2", formatCompactNumber(reportSummary.link2.students), formatCompactNumber(reportSummary.link2.transactions), formatReportCurrency(reportSummary.link2.collection), link2SuccessRate]
-            ].map(([color, title, students, transactions, collection, rate]) => (
+              ["#00E7B0", "Book Payment Link - 1", getPaymentLinkUrl("Link - 1"), formatCompactNumber(filteredSummary.link1.students), formatCompactNumber(filteredSummary.link1.transactions), formatReportCurrency(filteredSummary.link1.collection), link1SuccessRate],
+              ["#315EFF", "Book Payment Link - 2", getPaymentLinkUrl("Link - 2"), formatCompactNumber(filteredSummary.link2.students), formatCompactNumber(filteredSummary.link2.transactions), formatReportCurrency(filteredSummary.link2.collection), link2SuccessRate]
+            ].map(([color, title, url, students, transactions, collection, rate]) => (
               <Card className="rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.86),rgba(3,11,24,.64))] p-5" key={title}>
                 <div className="flex items-center justify-between">
-                  <h3 className="flex items-center gap-3 text-[17px] font-bold text-white"><span className="grid h-9 w-9 place-items-center rounded-full text-white" style={{ backgroundColor: color }}><Link className="h-5 w-5" /></span>{title}</h3>
-                  <Button className="h-8 rounded-[6px] px-3 text-[12px]" type="button" variant="ghost"><Copy className="h-3.5 w-3.5" />Copy</Button>
+                  <h3 className="flex min-w-0 items-center gap-3 text-[17px] font-bold text-white">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-white" style={{ backgroundColor: color }}><Link className="h-5 w-5" /></span>
+                    <span className="min-w-0">
+                      <span className="block truncate">{title}</span>
+                      <span className="block truncate text-[12px] font-semibold text-[#8CA3C7]">{url}</span>
+                    </span>
+                  </h3>
+                  <Button
+                    className="h-8 rounded-[6px] px-3 text-[12px]"
+                    onClick={() =>
+                      handleCopyPaymentLink(
+                        title.includes("1") ? "Link - 1" : "Link - 2"
+                      )
+                    }
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy
+                  </Button>
                 </div>
                 <div className="mt-4 grid grid-cols-4 gap-3 border-t border-white/8 pt-3">
                   {["Students", "Transactions", "Collection", "Success Rate"].map((label, index) => (
@@ -3807,9 +3739,32 @@ function WizklubReportsView() {
           <Card className="overflow-hidden rounded-[8px] border-[#263852] bg-[linear-gradient(145deg,rgba(8,20,39,.86),rgba(3,11,24,.64))]">
             <div className="flex flex-col gap-3 border-b border-[#263852] px-5 py-3 md:flex-row md:items-center md:justify-between">
               <h2 className="flex items-center gap-3 text-[16px] font-bold text-white"><span className="grid h-6 w-6 place-items-center rounded-[4px] bg-[#315EFF]"><FileText className="h-4 w-4" /></span>Transaction Details</h2>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="relative w-full md:w-[300px]">
+                  <Input
+                    className="h-9 rounded-[6px] border-[#263852] bg-[#07172D]/82 pr-9 text-[12px]"
+                    onChange={(event) => setTableSearch(event.target.value)}
+                    placeholder="Search admission no. / student"
+                    value={tableSearch}
+                  />
+                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8CA3C7]" />
+                </div>
               <div className="flex items-center gap-4 text-[12px] text-[#C7D2E4]">
-                <span>Showing 1 to {Math.min(10, reportData.length)} of {formatCompactNumber(reportData.length)} entries</span>
-                <ReportSelect className="h-8 w-[136px] px-3">10 per page</ReportSelect>
+                <span>
+                  Showing {tableFilteredReportData.length ? startIndex + 1 : 0} to {endIndex} of{" "}
+                  {formatCompactNumber(tableFilteredReportData.length)} entries
+                </span>
+                <ReportDropdown
+                  className="w-[136px]"
+                  onChange={(value) => setPageSize(Number(value))}
+                  options={[
+                    { label: "10 per page", value: "10" },
+                    { label: "25 per page", value: "25" },
+                    { label: "50 per page", value: "50" }
+                  ]}
+                  value={String(pageSize)}
+                />
+              </div>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -3818,37 +3773,98 @@ function WizklubReportsView() {
                   <tr>{["S.No.", "Admission No.", "Branch Name", "Book Name", "Book Price", "Payment Link Used", "Payment Date", "Payment ID", "Status", "Action"].map((head) => <th className="border-b border-r border-[#263852] px-4 py-3 font-bold last:border-r-0" key={head}>{head}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {(tableRows.length ? tableRows.map((record, index) => [
-                    String(index + 1),
-                    record.admissionNo,
-                    record.branchName || "-",
-                    getShortProductName(record.productName),
-                    String(record.amount),
-                    record.paymentLink,
-                    record.addedOn,
-                    record.razorpayPaymentId || record.id,
-                    statusClass(record.paymentStatus) === "success" ? "Success" : statusClass(record.paymentStatus) === "failed" ? "Failed" : "Pending",
-                    ""
-                  ]) : wizklubTransactions).map((row) => (
-                    <tr className="text-[#D8E4F7]" key={`${row[1]}-${row[7]}`}>
-                      {row.map((cell, index) => (
-                        <td className="border-b border-r border-[#263852]/70 px-4 py-3 last:border-r-0" key={`${row[1]}-${index}`}>
-                          {index === 1 ? <span className="font-semibold text-[#00D7E7] underline">{cell}</span> : index === 4 ? formatReportCurrency(Number(String(cell).replace(/,/g, ""))) : index === 5 ? <span className={cn("rounded-[5px] px-3 py-1 font-bold text-white", cell.includes("1") ? "bg-[#008E53]" : "bg-[#315EFF]")}>{cell}</span> : index === 8 ? <span className={cn("rounded-[5px] px-3 py-1 font-bold", cell === "Success" ? "bg-[#006D48] text-[#22FF7A]" : cell === "Failed" ? "bg-[#661D25] text-[#FF6B7D]" : "bg-[#3B465C] text-[#D8E4F7]")}>{cell}</span> : index === 9 ? <Eye className="mx-auto h-4 w-4 text-[#C7D2E4]" /> : cell}
-                        </td>
-                      ))}
+                  {tableRows.length ? (
+                    tableRows.map((record, index) => {
+                      const status =
+                        statusClass(record.paymentStatus) === "success"
+                          ? "Success"
+                          : statusClass(record.paymentStatus) === "failed"
+                            ? "Failed"
+                            : "Pending";
+                      const row = [
+                        String(startIndex + index + 1),
+                        record.admissionNo,
+                        record.branchName || "-",
+                        getShortProductName(record.productName),
+                        String(record.amount),
+                        record.paymentLink,
+                        record.addedOn,
+                        record.razorpayPaymentId || record.id,
+                        status,
+                        ""
+                      ];
+
+                      return (
+                        <tr className="text-[#D8E4F7]" key={`${record.admissionNo}-${record.razorpayPaymentId || record.id}-${index}`}>
+                          {row.map((cell, cellIndex) => (
+                            <td className="border-b border-r border-[#263852]/70 px-4 py-3 last:border-r-0" key={`${record.id}-${cellIndex}`}>
+                              {cellIndex === 1 ? <span className="font-semibold text-[#00D7E7] underline">{cell}</span> : cellIndex === 4 ? formatReportCurrency(Number(String(cell).replace(/,/g, ""))) : cellIndex === 5 ? (
+                                <span className={cn("inline-flex flex-col rounded-[5px] px-3 py-1 font-bold text-white", cell.includes("1") ? "bg-[#008E53]" : "bg-[#315EFF]")}>
+                                  <span>{cell}</span>
+                                  <span className="text-[10px] font-semibold text-white/80">
+                                    {getPaymentLinkUrl(cell.includes("1") ? "Link - 1" : "Link - 2")}
+                                  </span>
+                                </span>
+                              ) : cellIndex === 8 ? <span className={cn("rounded-[5px] px-3 py-1 font-bold", cell === "Success" ? "bg-[#006D48] text-[#22FF7A]" : cell === "Failed" ? "bg-[#661D25] text-[#FF6B7D]" : "bg-[#3B465C] text-[#D8E4F7]")}>{cell}</span> : cellIndex === 9 ? <Eye className="mx-auto h-4 w-4 text-[#C7D2E4]" /> : cell}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td className="px-4 py-10 text-center text-[13px] font-semibold text-[#AFC0D9]" colSpan={10}>
+                        No API records match the selected filters.
+                      </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
             <div className="flex items-center justify-center gap-3 px-5 py-3 text-[13px] text-white">
-              <Button className="h-8 w-10 rounded-[6px] px-0" type="button" variant="ghost"><ChevronLeft className="h-4 w-4" /></Button>
-              {["1", "2", "3", "4", "5", "...", "245"].map((page) => <span className={cn("grid h-8 min-w-8 place-items-center rounded-[6px] px-2", page === "1" && "border border-[#00E7B0] text-[#00E7B0]")} key={page}>{page}</span>)}
-              <Button className="h-8 w-10 rounded-[6px] px-0" type="button" variant="ghost"><ChevronRight className="h-4 w-4" /></Button>
+              <Button
+                className="h-8 w-10 rounded-[6px] px-0"
+                disabled={safeCurrentPage === 1 || !filteredReportData.length}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                type="button"
+                variant="ghost"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {paginationItems.map((page, index) =>
+                page === "..." ? (
+                  <span className="grid h-8 min-w-8 place-items-center px-2 text-[#8CA3C7]" key={`dots-${index}`}>
+                    ...
+                  </span>
+                ) : (
+                  <button
+                    className={cn(
+                      "grid h-8 min-w-8 place-items-center rounded-[6px] px-2 transition hover:border hover:border-[#00E7B0]/50 hover:text-[#00E7B0]",
+                      page === String(safeCurrentPage) && "border border-[#00E7B0] text-[#00E7B0]"
+                    )}
+                    key={page}
+                    onClick={() => setCurrentPage(Number(page))}
+                    type="button"
+                  >
+                    {page}
+                  </button>
+                )
+              )}
+              <Button
+                className="h-8 w-10 rounded-[6px] px-0"
+                disabled={safeCurrentPage === totalPages || !filteredReportData.length}
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                type="button"
+                variant="ghost"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           </Card>
         </div>
       </section>
+        </>
+      ) : null}
     </div>
   );
 }

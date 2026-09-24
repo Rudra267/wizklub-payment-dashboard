@@ -43,7 +43,19 @@ function normalizeRequestUrl(value: string | null | undefined) {
 }
 
 function getPaymentLink(requestUrl: string | null | undefined): "Link - 1" | "Link - 2" {
-  return normalizeRequestUrl(requestUrl) === "/online-fee-payments" ? "Link - 2" : "Link - 1";
+  const normalizedUrl = normalizeRequestUrl(requestUrl);
+
+  try {
+    const parsedUrl = new URL(normalizedUrl, "https://srichaitanyaschool.net");
+
+    return parsedUrl.pathname.replace(/\/+$/, "") === "/online-fee-payments"
+      ? "Link - 2"
+      : "Link - 1";
+  } catch {
+    return normalizedUrl.split("?")[0]?.replace(/\/+$/, "") === "/online-fee-payments"
+      ? "Link - 2"
+      : "Link - 1";
+  }
 }
 
 function normalizeRecord(record: RawWizklubBookReportRecord): WizklubBookReportRecord {
