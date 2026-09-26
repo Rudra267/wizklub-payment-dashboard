@@ -1373,6 +1373,14 @@ type MasterDataSection = {
   type: string;
 };
 
+const branchOrientationAcademicYears = [
+  { id: 18, label: "2025-2026", value: "2025-2026" },
+  { id: 19, label: "2026-2027", value: "2026-2027" }
+] as const;
+
+type BranchOrientationAcademicYear =
+  (typeof branchOrientationAcademicYears)[number]["value"];
+
 function createSyncSectionResult({
   data,
   message,
@@ -1435,10 +1443,16 @@ function SyncSectionsView() {
   const [results, setResults] = useState<SyncSectionResult[]>([]);
   const [syncingAction, setSyncingAction] = useState<"branch" | "master" | null>(null);
   const [syncingMasterType, setSyncingMasterType] = useState("");
+  const [branchOrientationAcademicYear, setBranchOrientationAcademicYear] =
+    useState<BranchOrientationAcademicYear>("2026-2027");
   const [syncMessage, setSyncMessage] = useState("Your data is safe and secure with us.");
   const syncingMasterSection = masterDataSections.find(
     (section) => section.type === syncingMasterType
   );
+  const branchOrientationAcademicYearId =
+    branchOrientationAcademicYears.find(
+      (year) => year.value === branchOrientationAcademicYear
+    )?.id ?? 19;
 
   function upsertSyncSectionResult(result: SyncSectionResult) {
     setResults((currentResults) => [
@@ -1449,10 +1463,18 @@ function SyncSectionsView() {
 
   async function handleBranchOrientationSync() {
     setSyncingAction("branch");
-    setSyncMessage("Syncing branch wise orientations...");
+    setSyncMessage(
+      `Syncing branch wise orientations for ${branchOrientationAcademicYear}...`
+    );
 
     try {
       const response = await fetch("/api/sync-sections/branch-wise-orientations", {
+        body: JSON.stringify({
+          academic_year_id: branchOrientationAcademicYearId
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
         method: "POST"
       });
       const result = (await response.json().catch(() => null)) as {
@@ -1638,8 +1660,23 @@ function SyncSectionsView() {
                 </p>
               </div>
             </div>
+            <label className="mt-7 block text-[11px] font-bold uppercase tracking-[.12em] text-[#8CA3C7]">
+              Academic Year
+            </label>
+            <ReportDropdown
+              className="mt-2"
+              disabled={syncingAction !== null}
+              onChange={(value) =>
+                setBranchOrientationAcademicYear(value as BranchOrientationAcademicYear)
+              }
+              options={branchOrientationAcademicYears.map((year) => ({
+                label: year.label,
+                value: year.value
+              }))}
+              value={branchOrientationAcademicYear}
+            />
             <Button
-              className="mt-9 h-11 w-full rounded-[6px] bg-gradient-to-r from-[#6D35C7] to-[#4D248F] text-[13px] shadow-[0_0_34px_rgba(124,58,237,.22)]"
+              className="mt-5 h-11 w-full rounded-[6px] bg-gradient-to-r from-[#6D35C7] to-[#4D248F] text-[13px] shadow-[0_0_34px_rgba(124,58,237,.22)]"
               disabled={syncingAction !== null}
               onClick={handleBranchOrientationSync}
               type="button"
