@@ -1374,8 +1374,8 @@ type MasterDataSection = {
 };
 
 const branchOrientationAcademicYears = [
-  { id: 18, label: "2025-2026", value: "2025-2026" },
-  { id: 19, label: "2026-2027", value: "2026-2027" }
+  { id: 18, label: "2026-2027", value: "2026-2027" },
+  { id: 19, label: "2027-2028", value: "2027-2028" }
 ] as const;
 
 type BranchOrientationAcademicYear =
@@ -7195,21 +7195,21 @@ const enabledBookRows: BookListRow[] = [
   }
 ];
 
-const defaultStudentBookSummary: StudentBookSummary = {
-  academicYear: "2026-2027",
-  admissionNo: "SCS1766316",
-  branch: "Jubileehills",
+const emptyStudentBookSummary: StudentBookSummary = {
+  academicYear: "-",
+  admissionNo: "-",
+  branch: "-",
   checkPurchaseSed: "0",
   checkPurchaseWizklub: "0",
-  className: "7th Class-C4IPLA",
-  parentName: "Existing",
-  pickUpDetails: "Yes",
+  className: "-",
+  parentName: "-",
+  pickUpDetails: "-",
   pickupNote: "(Charges will apply one time only in academic year)",
-  pickupType: "Through Courier",
-  state: "Telangana",
-  studentName: "Havish Sambari",
-  studentType: "Ts Central Ipl",
-  syllabus: "3"
+  pickupType: "-",
+  state: "-",
+  studentName: "-",
+  studentType: "-",
+  syllabus: "-"
 };
 
 function mapBookListResponse(payload: unknown) {
@@ -7316,24 +7316,24 @@ function mapBookListResponse(payload: unknown) {
   return {
     rows,
     summary: {
-      academicYear: readRecordValue(record, "academic_year", defaultStudentBookSummary.academicYear),
-      admissionNo: readRecordValue(record, "admission_no", defaultStudentBookSummary.admissionNo),
-      branch: readRecordValue(record, "school", defaultStudentBookSummary.branch),
+      academicYear: readRecordValue(record, "academic_year"),
+      admissionNo: readRecordValue(record, "admission_no"),
+      branch: readRecordValue(record, "school"),
       checkPurchaseSed: readRecordValue(record, "check_purchase_SED", "0"),
       checkPurchaseWizklub: readRecordValue(record, "check_purchase_wizklub", "0"),
-      className: readRecordValue(record, "academic_id", defaultStudentBookSummary.className),
-      parentName: readRecordValue(record, "transfer_status", defaultStudentBookSummary.parentName),
-      pickUpDetails: readRecordValue(record, "pick_up_details", defaultStudentBookSummary.pickUpDetails),
-      pickupNote: defaultStudentBookSummary.pickupNote,
+      className: readRecordValue(record, "academic_id"),
+      parentName: readRecordValue(record, "transfer_status"),
+      pickUpDetails: readRecordValue(record, "pick_up_details"),
+      pickupNote: emptyStudentBookSummary.pickupNote,
       pickupType: selectedPickup
-        ? readRecordValue(selectedPickup, "name", defaultStudentBookSummary.pickupType).replace(/\(.+\)/, "").trim()
-        : defaultStudentBookSummary.pickupType,
+        ? readRecordValue(selectedPickup, "name").replace(/\(.+\)/, "").trim()
+        : emptyStudentBookSummary.pickupType,
       state: selectedState
-        ? readRecordValue(selectedState, "name", defaultStudentBookSummary.state)
-        : defaultStudentBookSummary.state,
-      studentName: defaultStudentBookSummary.studentName,
-      studentType: readRecordValue(record, "orientation_name", defaultStudentBookSummary.studentType),
-      syllabus: readRecordValue(record, "syllabus", defaultStudentBookSummary.syllabus)
+        ? readRecordValue(selectedState, "name")
+        : emptyStudentBookSummary.state,
+      studentName: readRecordValue(record, "student_name"),
+      studentType: readRecordValue(record, "orientation_name"),
+      syllabus: readRecordValue(record, "syllabus")
     }
   };
 }
@@ -7345,7 +7345,7 @@ function StudentBookListView() {
   const [bookLookupMessage, setBookLookupMessage] = useState("");
   const [bookRows, setBookRows] = useState<BookListRow[]>([]);
   const [studentSummary, setStudentSummary] =
-    useState<StudentBookSummary>(defaultStudentBookSummary);
+    useState<StudentBookSummary>(emptyStudentBookSummary);
   const [openBookSections, setOpenBookSections] = useState<Record<string, boolean>>({
     "Book Kits": false,
     "Individual Products": false,
@@ -7461,10 +7461,15 @@ function StudentBookListView() {
       setStudentSummary(mapped.summary);
       setHasSearched(true);
       setBookLookupState("success");
-      setBookLookupMessage("Book list fetched successfully.");
+      setBookLookupMessage(
+        typeof result.message === "string" && result.message.trim()
+          ? result.message
+          : "Book list fetched successfully."
+      );
     } catch (error) {
       setHasSearched(false);
       setBookRows([]);
+      setStudentSummary(emptyStudentBookSummary);
       setBookLookupState("error");
       setBookLookupMessage(
         error instanceof Error ? error.message : "Unable to fetch book list."
@@ -7478,6 +7483,7 @@ function StudentBookListView() {
     setBookLookupState("idle");
     setBookLookupMessage("");
     setBookRows([]);
+    setStudentSummary(emptyStudentBookSummary);
   }
 
   function toggleBookSection(section: string) {

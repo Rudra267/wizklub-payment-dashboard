@@ -10,6 +10,34 @@ const BOOK_LIST_COOKIE =
 const BOOK_LIST_USER_ID = "1608043";
 const BOOK_LIST_ACADEMIC_YEAR_ID = "181";
 
+function readPayloadMessage(payload: unknown, fallback: string) {
+  if (payload && typeof payload === "object" && "message" in payload) {
+    return String((payload as { message: unknown }).message || fallback);
+  }
+
+  return fallback;
+}
+
+function readPayloadStatus(payload: unknown, fallback: boolean) {
+  if (payload && typeof payload === "object" && "status" in payload) {
+    return Boolean((payload as { status: unknown }).status);
+  }
+
+  if (payload && typeof payload === "object" && "success" in payload) {
+    return Boolean((payload as { success: unknown }).success);
+  }
+
+  return fallback;
+}
+
+function readPayloadData(payload: unknown) {
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return (payload as { data: unknown }).data;
+  }
+
+  return payload;
+}
+
 export async function POST(request: NextRequest) {
   if (!hasDashboardRole(request, ["admin", "wizklub"])) {
     return unauthorizedDashboardResponse();
@@ -43,23 +71,26 @@ export async function POST(request: NextRequest) {
       method: "POST"
     });
     const payload = await response.json().catch(() => null);
+    const success = response.ok && readPayloadStatus(payload, response.ok);
+    const message = readPayloadMessage(
+      payload,
+      success ? "Book list fetched successfully." : "Unable to fetch book list."
+    );
 
-    if (!response.ok) {
+    if (!success) {
       return NextResponse.json(
         {
-          message:
-            payload && typeof payload === "object" && "message" in payload
-              ? String(payload.message || "Unable to fetch book list.")
-              : "Unable to fetch book list.",
+          data: readPayloadData(payload),
+          message,
           success: false
         },
-        { status: response.status }
+        { status: response.ok ? 400 : response.status }
       );
     }
 
     return NextResponse.json({
-      data: payload,
-      message: "Book list fetched successfully.",
+      data: readPayloadData(payload),
+      message,
       success: true
     });
   } catch {
