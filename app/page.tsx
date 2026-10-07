@@ -4328,30 +4328,48 @@ function padDatePart(value: number) {
   return String(value).padStart(2, "0");
 }
 
-function formatKolkataDateTime(date: Date) {
-  return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(
-    date.getUTCDate()
-  )} 00:00:00`;
+function formatKolkataDate(value: { day: number; month: number; year: number }) {
+  return `${value.year}-${padDatePart(value.month)}-${padDatePart(value.day)}`;
+}
+
+function readKolkataDateTimeParts(date = new Date()) {
+  const kolkataParts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone: "Asia/Kolkata",
+    year: "numeric"
+  }).formatToParts(date);
+  const readPart = (type: string) =>
+    Number(kolkataParts.find((part) => part.type === type)?.value || "0");
+
+  return {
+    day: readPart("day"),
+    hour: readPart("hour"),
+    minute: readPart("minute"),
+    month: readPart("month"),
+    second: readPart("second"),
+    year: readPart("year")
+  };
 }
 
 function getAutoPendingDateRange() {
-  const kolkataParts = new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Asia/Kolkata",
-    year: "numeric"
-  }).formatToParts(new Date());
-  const readPart = (type: string) =>
-    Number(kolkataParts.find((part) => part.type === type)?.value || "0");
-  const year = readPart("year");
-  const month = readPart("month");
-  const day = readPart("day");
+  const now = readKolkataDateTimeParts();
+  const { year, month, day } = now;
   const startDate = new Date(Date.UTC(year, month - 1, day - 1));
-  const endDate = new Date(Date.UTC(year, month - 1, day + 1));
 
   return {
-    end_time: formatKolkataDateTime(endDate),
-    start_time: formatKolkataDateTime(startDate)
+    end_time: `${formatKolkataDate(now)} ${padDatePart(now.hour)}:${padDatePart(
+      now.minute
+    )}:${padDatePart(now.second)}`,
+    start_time: `${formatKolkataDate({
+      day: startDate.getUTCDate(),
+      month: startDate.getUTCMonth() + 1,
+      year: startDate.getUTCFullYear()
+    })} 00:00:00`
   };
 }
 
