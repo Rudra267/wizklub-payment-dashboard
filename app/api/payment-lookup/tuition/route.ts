@@ -1,5 +1,11 @@
 import { request as httpsRequest } from "https";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  BULK_UPDATE_CHUNK_SIZE,
+  chunkArray,
+  LOOKUP_CONCURRENCY,
+  mapWithConcurrency
+} from "../../batch-utils";
 import { hasDashboardRole, unauthorizedDashboardResponse } from "../../auth-utils";
 
 function readSuccess(payload: unknown, responseOk: boolean) {
@@ -211,6 +217,15 @@ function sendJsonRequest(url: string, method: "GET" | "POST", body: unknown) {
   });
 }
 
+type JsonRequestResult = Awaited<ReturnType<typeof sendJsonRequest>>;
+type TuitionUpdateResult = {
+  chunk: string[];
+  message: string;
+  payload: unknown;
+  response: JsonRequestResult;
+  success: boolean;
+};
+
 export async function POST(request: NextRequest) {
   if (!hasDashboardRole(request, ["admin"])) {
     return unauthorizedDashboardResponse();
@@ -244,7 +259,9 @@ export async function POST(request: NextRequest) {
   try {
     const statusResults =
       provider === "razorpay"
-        ? await Promise.all(ids.map((id) => checkRazorpayPaymentStatus(id)))
+        ? await mapWithConcurrency(ids, LOOKUP_CONCURRENCY, (id) =>
+            checkRazorpayPaymentStatus(id)
+          )
         : [];
     const successfulRazorpayOrderIds = statusResults
       .filter((result) => result.success)
@@ -270,30 +287,53 @@ export async function POST(request: NextRequest) {
 
     const updateIds =
       provider === "razorpay" ? successfulRazorpayOrderIds : ids;
-    const requestBody =
-      provider === "razorpay"
-        ? { order_ids: updateIds }
-        : { transaction_ids: updateIds };
-    const response =
-      provider === "cashfree"
-        ? await sendJsonRequest(url, "GET", requestBody)
-        : await sendJsonRequest(url, "POST", requestBody);
-    const payload = response.payload;
-    const updateSuccess =
-      typeof payload === "string"
-        ? response.ok && !payload.toLowerCase().includes("fail")
-        : response.ok && readSuccess(payload, response.ok);
+    const updateChunks = chunkArray(updateIds, BULK_UPDATE_CHUNK_SIZE);
+    const updateResults: TuitionUpdateResult[] = [];
+
+    for (const chunk of updateChunks) {
+      const requestBody =
+        provider === "razorpay"
+          ? { order_ids: chunk }
+          : { transaction_ids: chunk };
+      const response =
+        provider === "cashfree"
+          ? await sendJsonRequest(url, "GET", requestBody)
+          : await sendJsonRequest(url, "POST", requestBody);
+      const payload = response.payload;
+      const updateSuccess =
+        typeof payload === "string"
+          ? response.ok && !payload.toLowerCase().includes("fail")
+          : response.ok && readSuccess(payload, response.ok);
+
+      updateResults.push({
+        chunk,
+        message:
+          typeof payload === "string" && payload.trim()
+            ? payload
+            : readMessage(
+                payload,
+                updateSuccess
+                  ? "Tuition payment status updated successfully."
+                  : "Tuition payment status update failed."
+              ),
+        payload,
+        response,
+        success: updateSuccess
+      });
+    }
+
+    const failedUpdateIds = updateResults.flatMap((result) =>
+      result.success ? [] : result.chunk
+    );
     const failedIds =
       provider === "razorpay"
-        ? [
-            ...failedStatusOrderIds,
-            ...(updateSuccess ? [] : successfulRazorpayOrderIds)
-          ]
-        : updateSuccess
-          ? []
-          : ids;
-    const success = updateSuccess && failedIds.length === 0;
-    const fallback = updateSuccess
+        ? [...failedStatusOrderIds, ...failedUpdateIds]
+        : failedUpdateIds;
+    const success = failedIds.length === 0;
+    const updateSuccessCount = updateIds.length - failedUpdateIds.length;
+    const firstFailedUpdate = updateResults.find((result) => !result.success);
+    const firstSuccessfulUpdate = updateResults.find((result) => result.success);
+    const fallback = success
       ? "Tuition payment status updated successfully."
       : "Tuition payment status update failed.";
 
@@ -301,24 +341,49 @@ export async function POST(request: NextRequest) {
       {
         failedIds,
         message:
-          typeof payload === "string" && payload.trim()
-            ? payload
-            : failedIds.length > 0 && updateSuccess
-              ? `${successfulRazorpayOrderIds.length}/${ids.length} Razorpay order IDs updated. ${readFirstFailureMessage(
-                  statusResults,
-                  `${failedIds.length} failed payment status check.`
-                )}`
-              : readMessage(payload, fallback),
+          ids.length === 1
+            ? firstSuccessfulUpdate?.message || firstFailedUpdate?.message || fallback
+            : failedIds.length > 0
+              ? `${ids.length - failedIds.length}/${ids.length} ${
+                  provider === "razorpay" ? "Razorpay order IDs" : "Cashfree transaction IDs"
+                } updated in batches of ${BULK_UPDATE_CHUNK_SIZE}. ${
+                  failedStatusOrderIds.length
+                    ? readFirstFailureMessage(
+                        statusResults,
+                        `${failedStatusOrderIds.length} failed payment status check.`
+                      )
+                    : firstFailedUpdate?.message || fallback
+                }`
+              : `${updateSuccessCount}/${ids.length} ${
+                  provider === "razorpay" ? "Razorpay order IDs" : "Cashfree transaction IDs"
+                } updated successfully in batches of ${BULK_UPDATE_CHUNK_SIZE}.`,
         results:
           provider === "razorpay"
             ? statusResults.map((result) => ({
                 ...result,
-                updated: result.success && updateSuccess
+                updated:
+                  result.success &&
+                  updateResults.some(
+                    (updateResult) =>
+                      updateResult.success && updateResult.chunk.includes(result.orderId)
+                  )
               }))
             : undefined,
-        success
+        success,
+        updateResults: updateResults.map(({ chunk, message, response, success }) => ({
+          count: chunk.length,
+          message,
+          status: response.status,
+          success
+        }))
       },
-      { status: success ? 200 : response.status >= 400 ? response.status : 400 }
+      {
+        status: success
+          ? 200
+          : firstFailedUpdate?.response.status && firstFailedUpdate.response.status >= 400
+            ? firstFailedUpdate.response.status
+            : 400
+      }
     );
   } catch {
     return NextResponse.json(

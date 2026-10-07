@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { LOOKUP_CONCURRENCY, mapWithConcurrency } from "../../batch-utils";
 import { hasDashboardRole, unauthorizedDashboardResponse } from "../../auth-utils";
 
 function readSuccess(payload: unknown) {
@@ -199,10 +200,10 @@ export async function POST(request: NextRequest) {
             success: true,
             transactionId
           }))
-        : await Promise.all(
-            matchedTransactionIds.map((transactionId) =>
-              checkBookPaymentStatus(statusCheckUrl, transactionId)
-            )
+        : await mapWithConcurrency(
+            matchedTransactionIds,
+            LOOKUP_CONCURRENCY,
+            (transactionId) => checkBookPaymentStatus(statusCheckUrl, transactionId)
           );
       const successfulTransactionIds = statusResults
         .filter((result) => result.success)
@@ -226,15 +227,16 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const receiptResults = await Promise.all(
-        successfulTransactionIds.map((transactionId) =>
+      const receiptResults = await mapWithConcurrency(
+        successfulTransactionIds,
+        LOOKUP_CONCURRENCY,
+        (transactionId) =>
           callTransactionApi(
             defaultVerifyUrl,
             transactionId,
             "Receipt generated. Reach out site for download receipt.",
             "Transaction verification failed."
           )
-        )
       );
       const failedReceiptIds = receiptResults
         .map((result, index) => ({
@@ -302,10 +304,10 @@ export async function POST(request: NextRequest) {
           success: true,
           transactionId
         }))
-      : await Promise.all(
-          matchedTransactionIds.map((transactionId) =>
-            checkBookPaymentStatus(statusCheckUrl, transactionId)
-          )
+      : await mapWithConcurrency(
+          matchedTransactionIds,
+          LOOKUP_CONCURRENCY,
+          (transactionId) => checkBookPaymentStatus(statusCheckUrl, transactionId)
         );
     const successfulTransactionIds = statusResults
       .filter((result) => result.success)
@@ -329,15 +331,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const receiptResults = await Promise.all(
-      successfulTransactionIds.map((transactionId) =>
+    const receiptResults = await mapWithConcurrency(
+      successfulTransactionIds,
+      LOOKUP_CONCURRENCY,
+      (transactionId) =>
         callTransactionApi(
           verifyUrl || defaultVerifyUrl,
           transactionId,
           "Receipt generated. Reach out site for download receipt.",
           "Transaction verification failed."
         )
-      )
     );
     const failedReceiptIds = receiptResults
       .map((result, index) => ({

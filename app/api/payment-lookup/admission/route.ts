@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { LOOKUP_CONCURRENCY, mapWithConcurrency } from "../../batch-utils";
 import { hasDashboardRole, unauthorizedDashboardResponse } from "../../auth-utils";
 
 function readSuccess(payload: unknown, responseOk: boolean) {
@@ -213,8 +214,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const statusResults = await Promise.all(
-      ids.map((id) => checkRazorpayAdmissionPaymentStatus(id))
+    const statusResults = await mapWithConcurrency(
+      ids,
+      LOOKUP_CONCURRENCY,
+      (id) => checkRazorpayAdmissionPaymentStatus(id)
     );
     const successfulTransactionIds = statusResults
       .filter((result) => result.success)
@@ -238,8 +241,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const updateResults = await Promise.all(
-      successfulTransactionIds.map((id) => updateAdmissionPayment(id))
+    const updateResults = await mapWithConcurrency(
+      successfulTransactionIds,
+      LOOKUP_CONCURRENCY,
+      (id) => updateAdmissionPayment(id)
     );
     const failedUpdateTransactionIds = updateResults
       .filter((result) => !result.success)

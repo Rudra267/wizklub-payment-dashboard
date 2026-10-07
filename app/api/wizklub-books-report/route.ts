@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { hasDashboardRole, unauthorizedDashboardResponse } from "../auth-utils";
+import { NextResponse } from "next/server";
 
 type RawWizklubBookReportRecord = {
   added_on?: string | null;
@@ -188,91 +187,9 @@ function buildSummary(records: WizklubBookReportRecord[]) {
   };
 }
 
-export async function GET(request: NextRequest) {
-  if (!hasDashboardRole(request, ["admin", "wizklub"])) {
-    return unauthorizedDashboardResponse();
-  }
-
-  const reportUrl =
-    process.env.WIZKLUB_BOOKS_REPORT_API_URL || DEFAULT_WIZKLUB_BOOKS_REPORT_URL;
-  const maxPages = Number(process.env.WIZKLUB_BOOKS_REPORT_MAX_PAGES || "100");
-  const records: WizklubBookReportRecord[] = [];
-  const visitedLastIds = new Set<string>();
-  let lastId = request.nextUrl.searchParams.get("last_id") || "0";
-  let apiCount = 0;
-
-  try {
-    for (let page = 0; page < maxPages; page += 1) {
-      if (visitedLastIds.has(lastId)) {
-        break;
-      }
-
-      visitedLastIds.add(lastId);
-
-      const url = new URL(reportUrl);
-      url.searchParams.set("last_id", lastId);
-
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: {
-          Accept: "application/json"
-        },
-        method: "GET"
-      });
-      const payload = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        return NextResponse.json(
-          {
-            message:
-              payload && typeof payload.message === "string"
-                ? payload.message
-                : "Unable to fetch Wizklub report.",
-            success: false
-          },
-          { status: response.status }
-        );
-      }
-
-      if (!payload || typeof payload !== "object") {
-        break;
-      }
-
-      const typedPayload = payload as {
-        count?: number | string;
-        data?: RawWizklubBookReportRecord[];
-        message?: string;
-        next_last_id?: number | string | null;
-        status?: boolean;
-      };
-      const pageRecords = Array.isArray(typedPayload.data) ? typedPayload.data : [];
-
-      apiCount = Number(typedPayload.count || apiCount) || apiCount;
-      records.push(...pageRecords.map(normalizeRecord));
-
-      const nextLastId = String(typedPayload.next_last_id || "").trim();
-
-      if (!typedPayload.status || !pageRecords.length || !nextLastId || nextLastId === lastId) {
-        break;
-      }
-
-      lastId = nextLastId;
-    }
-
-    const summary = buildSummary(records);
-
-    return NextResponse.json({
-      apiCount,
-      count: records.length,
-      data: records,
-      message: "Wizklub report loaded.",
-      summary,
-      success: true
-    });
-  } catch {
-    return NextResponse.json(
-      { message: "Unable to connect to Wizklub report API.", success: false },
-      { status: 502 }
-    );
-  }
+export async function GET() {
+  return NextResponse.json(
+    { message: "Wizklub report access is disabled.", success: false },
+    { status: 403 }
+  );
 }

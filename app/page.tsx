@@ -114,8 +114,7 @@ type StatCard = {
 const navItems = [
   {
     children: [
-      { icon: LayoutDashboard, label: "Wizklub Payments", view: "Wizklub Payments" },
-      { badge: "NEW", icon: BarChart3, label: "Wizklub Report", view: "Wizklub Report" }
+      { icon: LayoutDashboard, label: "Wizklub Payments", view: "Wizklub Payments" }
     ],
     icon: LayoutDashboard,
     label: "Wizklub"
@@ -152,7 +151,6 @@ function canAccessView(role: DashboardRole | null, label: string) {
       label === "Sync Student" ||
       label === "Sync Users" ||
       label === "Table Lookup" ||
-      label === "Wizklub Report" ||
       label === "Students" ||
       label === "Book Lists" ||
       label === "Uniform Lists"
@@ -162,7 +160,6 @@ function canAccessView(role: DashboardRole | null, label: string) {
   if (role === "wizklub") {
     return (
       label === "Wizklub Payments" ||
-      label === "Wizklub Report" ||
       label === "Students" ||
       label === "Recipts" ||
       label === "Book Lists"
@@ -4809,7 +4806,7 @@ function PaymentLookupView() {
                           placeholder={
                             tuitionProvider === "razorpay"
                               ? "Enter Razorpay order IDs"
-                              : "Enter Cashfree transaction IDs"
+                              : "Enter Cashfree transaction IDs before that update status 0 in database"
                           }
                           value={tuitionIds}
                         />
@@ -9845,7 +9842,7 @@ export default function Home() {
   const isSyncSectionsView = activeView === "Sync Master";
   const isSyncStudentView = activeView === "Sync Student";
   const isSyncUsersView = activeView === "Sync Users";
-  const isReportView = activeView === "Wizklub Report";
+  const isReportView = false;
   const isStudentsView = activeView === "Students";
   const isStudentBookListView = activeView === "Book Lists";
   const isUniformListsView = activeView === "Uniform Lists";
@@ -10693,7 +10690,7 @@ export default function Home() {
               <h3 className="text-[16px] font-semibold text-white">Important Note</h3>
               <p className="mt-3 text-[13px] leading-6 text-[#D3DCF1]">
                 Put the respective transaction IDs or order IDs from database,
-                separated using comma.
+                separated using comma. Large lists are processed safely in batches of 200.
               </p>
             </div>
           </section>
