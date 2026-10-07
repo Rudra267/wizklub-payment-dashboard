@@ -35,6 +35,8 @@ import {
   MapPin,
   Menu,
   Package,
+  Pause,
+  Play,
   RefreshCcw,
   ScanQrCode,
   Search,
@@ -42,6 +44,7 @@ import {
   ShieldCheck,
   Shirt,
   ShoppingBag,
+  Square,
   GitBranch,
   Truck,
   Trash2,
@@ -114,7 +117,8 @@ type StatCard = {
 const navItems = [
   {
     children: [
-      { icon: LayoutDashboard, label: "Wizklub Payments", view: "Wizklub Payments" }
+      { icon: LayoutDashboard, label: "Wizklub Payments", view: "Wizklub Payments" },
+      { badge: "NEW", icon: BarChart3, label: "Wizklub Report", view: "Wizklub Report" }
     ],
     icon: LayoutDashboard,
     label: "Wizklub"
@@ -151,6 +155,7 @@ function canAccessView(role: DashboardRole | null, label: string) {
       label === "Sync Student" ||
       label === "Sync Users" ||
       label === "Table Lookup" ||
+      label === "Wizklub Report" ||
       label === "Students" ||
       label === "Book Lists" ||
       label === "Uniform Lists"
@@ -160,6 +165,7 @@ function canAccessView(role: DashboardRole | null, label: string) {
   if (role === "wizklub") {
     return (
       label === "Wizklub Payments" ||
+      label === "Wizklub Report" ||
       label === "Students" ||
       label === "Recipts" ||
       label === "Book Lists"
@@ -4248,6 +4254,161 @@ const paymentLookupCards = [
   }
 ];
 
+type AutoPendingCategory = "admission" | "exam" | "uniform" | "tuition" | "book";
+type AutoQueueStatus =
+  | "idle"
+  | "fetching"
+  | "running"
+  | "paused"
+  | "stopping"
+  | "stopped"
+  | "completed"
+  | "empty";
+type AutoLogTone = "info" | "success" | "error" | "warning";
+type AutoLogEntry = {
+  id: string;
+  message: string;
+  tone: AutoLogTone;
+  timestamp: string;
+};
+type AutoQueueCounts = {
+  failed: number;
+  needsVerification: number;
+  processed: number;
+  successful: number;
+  unresolved: number;
+};
+type AutoQueueState = {
+  category: AutoPendingCategory | null;
+  completionMessage: string;
+  cooldownLabel: string;
+  counts: AutoQueueCounts;
+  currentId: string;
+  dateRange: { end_time: string; start_time: string } | null;
+  log: AutoLogEntry[];
+  status: AutoQueueStatus;
+  total: number;
+};
+
+const autoPendingQueueConfig = {
+  activityLogLimit: 80,
+  interRequestDelayMs: 2000,
+  lockHeartbeatMs: 5000,
+  lockStaleMs: 15000,
+  requestTimeoutMs: 90000,
+  serverFailurePauseThreshold: 3,
+  twentyRecordCooldownMs: 10000
+};
+const autoPendingLockKey = "wizklub_auto_pending_queue_lock";
+const autoPendingOwnerKey = "wizklub_auto_pending_queue_owner";
+
+const emptyAutoQueueCounts: AutoQueueCounts = {
+  failed: 0,
+  needsVerification: 0,
+  processed: 0,
+  successful: 0,
+  unresolved: 0
+};
+
+function createInitialAutoQueueState(): AutoQueueState {
+  return {
+    category: null,
+    completionMessage: "",
+    cooldownLabel: "",
+    counts: { ...emptyAutoQueueCounts },
+    currentId: "",
+    dateRange: null,
+    log: [],
+    status: "idle",
+    total: 0
+  };
+}
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function formatKolkataDateTime(date: Date) {
+  return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(
+    date.getUTCDate()
+  )} 00:00:00`;
+}
+
+function getAutoPendingDateRange() {
+  const kolkataParts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Kolkata",
+    year: "numeric"
+  }).formatToParts(new Date());
+  const readPart = (type: string) =>
+    Number(kolkataParts.find((part) => part.type === type)?.value || "0");
+  const year = readPart("year");
+  const month = readPart("month");
+  const day = readPart("day");
+  const startDate = new Date(Date.UTC(year, month - 1, day - 1));
+  const endDate = new Date(Date.UTC(year, month - 1, day + 1));
+
+  return {
+    end_time: formatKolkataDateTime(endDate),
+    start_time: formatKolkataDateTime(startDate)
+  };
+}
+
+function formatCountdown(ms: number) {
+  return `${Math.max(0, Math.ceil(ms / 1000))}s`;
+}
+
+function getRetryAfterMs(value: string | null) {
+  if (!value) {
+    return 60000;
+  }
+
+  const seconds = Number(value);
+
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, seconds * 1000);
+  }
+
+  const retryDate = Date.parse(value);
+
+  return Number.isFinite(retryDate) ? Math.max(0, retryDate - Date.now()) : 60000;
+}
+
+function isAutoQueueActive(status: AutoQueueStatus) {
+  return status === "fetching" || status === "running" || status === "paused" || status === "stopping";
+}
+
+function normalizeAutoCategory(cardKey: string): AutoPendingCategory | null {
+  if (
+    cardKey === "admission" ||
+    cardKey === "exam" ||
+    cardKey === "uniform" ||
+    cardKey === "tuition"
+  ) {
+    return cardKey;
+  }
+
+  return cardKey === "wizklub" ? "book" : null;
+}
+
+function getAutoQueueOwnerId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const existingOwner = window.sessionStorage.getItem(autoPendingOwnerKey);
+
+  if (existingOwner) {
+    return existingOwner;
+  }
+
+  const owner = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  window.sessionStorage.setItem(autoPendingOwnerKey, owner);
+
+  return owner;
+}
+
 function PaymentLookupView() {
   type TuitionProvider = "razorpay" | "cashfree" | "grayquest";
 
@@ -4277,9 +4438,603 @@ function PaymentLookupView() {
   const [wizklubVerifyState, setWizklubVerifyState] = useState<LookupState>("idle");
   const [wizklubVerifyMessage, setWizklubVerifyMessage] = useState("");
   const [copiedFailedLookupIds, setCopiedFailedLookupIds] = useState(false);
+  const [autoQueue, setAutoQueue] = useState<AutoQueueState>(
+    createInitialAutoQueueState
+  );
+  const [isAutoQueueLocked, setIsAutoQueueLocked] = useState(false);
+  const autoQueueStatusRef = useRef<AutoQueueStatus>("idle");
+  const autoQueueOwnerRef = useRef(getAutoQueueOwnerId());
+  const autoQueueStoppedRef = useRef(false);
+  const autoQueueSubmittedUpdateRef = useRef(false);
+
+  const appendAutoLog = (message: string, tone: AutoLogTone = "info") => {
+    setAutoQueue((current) => ({
+      ...current,
+      log: [
+        {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          message,
+          timestamp: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          }),
+          tone
+        },
+        ...current.log
+      ].slice(0, autoPendingQueueConfig.activityLogLimit)
+    }));
+  };
+
+  const updateAutoQueueStatus = (status: AutoQueueStatus) => {
+    autoQueueStatusRef.current = status;
+    setAutoQueue((current) => ({ ...current, status }));
+  };
+
+  function readAutoQueueLock() {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const rawLock = window.localStorage.getItem(autoPendingLockKey);
+
+    if (!rawLock) {
+      return false;
+    }
+
+    try {
+      const lock = JSON.parse(rawLock) as {
+        owner?: string;
+        startedAt?: number;
+        updatedAt?: number;
+      };
+      const lastSeenAt = lock.updatedAt || lock.startedAt || 0;
+
+      if (
+        !lastSeenAt ||
+        Date.now() - lastSeenAt > autoPendingQueueConfig.lockStaleMs
+      ) {
+        window.localStorage.removeItem(autoPendingLockKey);
+        return false;
+      }
+
+      return Boolean(lock.owner && lock.owner !== autoQueueOwnerRef.current);
+    } catch {
+      window.localStorage.removeItem(autoPendingLockKey);
+      return false;
+    }
+  }
+
+  function syncAutoQueueLockState() {
+    if (!autoQueueOwnerRef.current) {
+      autoQueueOwnerRef.current = getAutoQueueOwnerId();
+    }
+
+    setIsAutoQueueLocked(readAutoQueueLock());
+  }
+
+  function writeAutoQueueLock() {
+    if (typeof window === "undefined" || !autoQueueOwnerRef.current) {
+      return;
+    }
+
+    const now = Date.now();
+
+    window.localStorage.setItem(
+      autoPendingLockKey,
+      JSON.stringify({
+        owner: autoQueueOwnerRef.current,
+        startedAt: now,
+        updatedAt: now
+      })
+    );
+  }
+
+  function refreshAutoQueueLock() {
+    if (typeof window === "undefined" || !autoQueueOwnerRef.current) {
+      return;
+    }
+
+    const rawLock = window.localStorage.getItem(autoPendingLockKey);
+
+    if (!rawLock) {
+      return;
+    }
+
+    try {
+      const lock = JSON.parse(rawLock) as { owner?: string; startedAt?: number };
+
+      if (lock.owner === autoQueueOwnerRef.current) {
+        window.localStorage.setItem(
+          autoPendingLockKey,
+          JSON.stringify({
+            ...lock,
+            updatedAt: Date.now()
+          })
+        );
+      }
+    } catch {
+      window.localStorage.removeItem(autoPendingLockKey);
+    }
+  }
+
+  function acquireAutoQueueLock() {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    autoQueueOwnerRef.current = autoQueueOwnerRef.current || getAutoQueueOwnerId();
+
+    if (readAutoQueueLock()) {
+      setIsAutoQueueLocked(true);
+      return false;
+    }
+
+    writeAutoQueueLock();
+    setIsAutoQueueLocked(false);
+    return true;
+  }
+
+  function releaseAutoQueueLock() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const rawLock = window.localStorage.getItem(autoPendingLockKey);
+
+    if (!rawLock) {
+      return;
+    }
+
+    try {
+      const lock = JSON.parse(rawLock) as { owner?: string };
+
+      if (lock.owner === autoQueueOwnerRef.current) {
+        window.localStorage.removeItem(autoPendingLockKey);
+      }
+    } catch {
+      window.localStorage.removeItem(autoPendingLockKey);
+    }
+  }
+
+  const blockManualDuringAutoQueue = (setState: (state: LookupState) => void, setMessage: (message: string) => void) => {
+    if (isAutoQueueActive(autoQueueStatusRef.current) || readAutoQueueLock()) {
+      setState("error");
+      setMessage("Auto Hit Pendings is active. Pause or stop it before manual updates.");
+      return true;
+    }
+
+    return false;
+  };
+
+  function buildAutoUpdateRequest(category: AutoPendingCategory, id: string) {
+    if (category === "tuition") {
+      return {
+        body: { ids: id, provider: "razorpay" },
+        url: "/api/payment-lookup/tuition"
+      };
+    }
+
+    if (category === "book") {
+      return {
+        body: { transactionId: id },
+        url: "/api/transaction/verify"
+      };
+    }
+
+    return {
+      body: { transactionId: id },
+      url: `/api/payment-lookup/${category}`
+    };
+  }
+
+  async function waitForAutoQueueDelay(ms: number, label: string) {
+    const startedAt = Date.now();
+    let remaining = ms;
+
+    while (remaining > 0) {
+      if (autoQueueStoppedRef.current) {
+        break;
+      }
+
+      setAutoQueue((current) => ({
+        ...current,
+        cooldownLabel: `${label}: ${formatCountdown(remaining)}`
+      }));
+      await wait(Math.min(1000, remaining));
+      remaining = ms - (Date.now() - startedAt);
+    }
+
+    setAutoQueue((current) => ({ ...current, cooldownLabel: "" }));
+  }
+
+  async function waitWhileAutoQueuePaused() {
+    while (autoQueueStatusRef.current === "paused" && !autoQueueStoppedRef.current) {
+      await wait(500);
+    }
+  }
+
+  async function fetchWithAutoTimeout(url: string, init: RequestInit) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      autoPendingQueueConfig.requestTimeoutMs
+    );
+
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  function classifyAutoUpdateResult(response: Response, result: unknown, id: string) {
+    const failedIds =
+      result && typeof result === "object" && Array.isArray((result as { failedIds?: unknown }).failedIds)
+        ? ((result as { failedIds: unknown[] }).failedIds as unknown[])
+            .map((failedId) => String(failedId).trim())
+            .filter(Boolean)
+        : [];
+    const message =
+      result && typeof result === "object" && typeof (result as { message?: unknown }).message === "string"
+        ? (result as { message: string }).message
+        : response.ok
+          ? "Update completed."
+          : "Update failed.";
+
+    return {
+      failed: failedIds.includes(id) || !response.ok || !(result && typeof result === "object" && (result as { success?: unknown }).success === true),
+      message
+    };
+  }
+
+  useEffect(() => {
+    syncAutoQueueLockState();
+
+    const lockCheckInterval = window.setInterval(
+      syncAutoQueueLockState,
+      autoPendingQueueConfig.lockHeartbeatMs
+    );
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === autoPendingLockKey) {
+        syncAutoQueueLockState();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.clearInterval(lockCheckInterval);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAutoQueueActive(autoQueue.status)) {
+      return;
+    }
+
+    refreshAutoQueueLock();
+
+    const heartbeatInterval = window.setInterval(
+      refreshAutoQueueLock,
+      autoPendingQueueConfig.lockHeartbeatMs
+    );
+
+    return () => window.clearInterval(heartbeatInterval);
+  }, [autoQueue.status]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (
+        !autoQueueSubmittedUpdateRef.current ||
+        !isAutoQueueActive(autoQueueStatusRef.current)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
+  async function handleAutoHitPendings(category: AutoPendingCategory) {
+    if (isAutoQueueActive(autoQueueStatusRef.current)) {
+      return;
+    }
+
+    if (category === "tuition" && tuitionProvider !== "razorpay") {
+      setTuitionLookupState("error");
+      setTuitionLookupMessage("Auto Hit Pendings uses the Razorpay pending API. Select Razorpay first.");
+      return;
+    }
+
+    if (!acquireAutoQueueLock()) {
+      setAutoQueue((current) => ({
+        ...current,
+        completionMessage: "Another Auto Hit Pendings run is already active in this browser.",
+        status: "paused"
+      }));
+      return;
+    }
+
+    const dateRange = getAutoPendingDateRange();
+    autoQueueStoppedRef.current = false;
+    autoQueueSubmittedUpdateRef.current = false;
+    autoQueueStatusRef.current = "fetching";
+    setAutoQueue({
+      ...createInitialAutoQueueState(),
+      category,
+      dateRange,
+      status: "fetching"
+    });
+    appendAutoLog(
+      `Fetching pending IDs from ${dateRange.start_time} to ${dateRange.end_time}.`
+    );
+
+    try {
+      const pendingResponse = await fetch("/api/payment-lookup/pending", {
+        body: JSON.stringify({
+          category,
+          end_time: dateRange.end_time,
+          start_time: dateRange.start_time
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const pendingResult = await pendingResponse.json().catch(() => null);
+
+      if (pendingResponse.status === 401 || pendingResponse.status === 403) {
+        updateAutoQueueStatus("paused");
+        appendAutoLog("Authentication failed. Queue paused.", "error");
+        return;
+      }
+
+      if (!pendingResponse.ok || !pendingResult?.success) {
+        updateAutoQueueStatus("stopped");
+        setAutoQueue((current) => ({
+          ...current,
+          completionMessage:
+            pendingResult?.message || "Unable to fetch pending transactions."
+        }));
+        appendAutoLog(
+          pendingResult?.message || "Unable to fetch pending transactions.",
+          "error"
+        );
+        return;
+      }
+
+      const pendingIds: string[] = Array.isArray(pendingResult.ids)
+        ? pendingResult.ids
+            .map((id: unknown) => (typeof id === "string" || typeof id === "number" ? String(id).trim() : ""))
+            .filter((id: string) => Boolean(id))
+        : [];
+      const ids = Array.from(new Set(pendingIds));
+
+      if (ids.length === 0) {
+        updateAutoQueueStatus("empty");
+        setAutoQueue((current) => ({
+          ...current,
+          completionMessage: "No pending transactions found",
+          total: 0
+        }));
+        appendAutoLog("No pending transactions found.", "info");
+        return;
+      }
+
+      updateAutoQueueStatus("running");
+      setAutoQueue((current) => ({
+        ...current,
+        completionMessage: "",
+        counts: { ...emptyAutoQueueCounts },
+        total: ids.length
+      }));
+      appendAutoLog(`Loaded ${ids.length} pending ID${ids.length === 1 ? "" : "s"}.`);
+
+      let consecutiveServerFailures = 0;
+
+      for (const id of ids) {
+        await waitWhileAutoQueuePaused();
+
+        if (autoQueueStoppedRef.current) {
+          break;
+        }
+
+        setAutoQueue((current) => ({ ...current, currentId: id }));
+
+        try {
+          const request = buildAutoUpdateRequest(category, id);
+          autoQueueSubmittedUpdateRef.current = true;
+          const response = await fetchWithAutoTimeout(request.url, {
+            body: JSON.stringify(request.body),
+            headers: {
+              "Content-Type": "application/json"
+            },
+            method: "POST"
+          });
+          const result = await response.json().catch(() => null);
+
+          if (response.status === 401 || response.status === 403) {
+            updateAutoQueueStatus("paused");
+            appendAutoLog(`Authentication failed on ${id}. Queue paused.`, "error");
+            setAutoQueue((current) => ({
+              ...current,
+              counts: {
+                ...current.counts,
+                processed: current.counts.processed + 1,
+                unresolved: current.counts.unresolved + 1
+              }
+            }));
+            await waitWhileAutoQueuePaused();
+
+            if (autoQueueStoppedRef.current) {
+              break;
+            }
+
+            consecutiveServerFailures = 0;
+            continue;
+          }
+
+          if (response.status === 429) {
+            const retryMs = getRetryAfterMs(response.headers.get("Retry-After"));
+            appendAutoLog(`Rate limited on ${id}. Waiting ${formatCountdown(retryMs)}.`, "warning");
+            await waitForAutoQueueDelay(retryMs, "Rate limit cooldown");
+          }
+
+          const classified = classifyAutoUpdateResult(response, result, id);
+          const isServerFailure = response.status >= 500;
+          consecutiveServerFailures = isServerFailure
+            ? consecutiveServerFailures + 1
+            : 0;
+
+          setAutoQueue((current) => ({
+            ...current,
+            counts: {
+              ...current.counts,
+              failed: current.counts.failed + (classified.failed ? 1 : 0),
+              processed: current.counts.processed + 1,
+              successful: current.counts.successful + (classified.failed ? 0 : 1)
+            }
+          }));
+          appendAutoLog(
+            `${id}: ${classified.message}`,
+            classified.failed ? "error" : "success"
+          );
+
+          if (
+            consecutiveServerFailures >=
+            autoPendingQueueConfig.serverFailurePauseThreshold
+          ) {
+            updateAutoQueueStatus("paused");
+            appendAutoLog("Paused after 3 consecutive server failures.", "error");
+            await waitWhileAutoQueuePaused();
+
+            if (autoQueueStoppedRef.current) {
+              break;
+            }
+
+            consecutiveServerFailures = 0;
+            continue;
+          }
+        } catch (error) {
+          const isAbort = error instanceof DOMException && error.name === "AbortError";
+          consecutiveServerFailures += 1;
+          setAutoQueue((current) => ({
+            ...current,
+            counts: {
+              ...current.counts,
+              needsVerification:
+                current.counts.needsVerification + (isAbort ? 1 : 0),
+              processed: current.counts.processed + 1,
+              unresolved: current.counts.unresolved + (isAbort ? 0 : 1)
+            }
+          }));
+          appendAutoLog(
+            isAbort
+              ? `${id}: timed out. Marked Needs verification.`
+              : `${id}: network error. Marked unresolved.`,
+            isAbort ? "warning" : "error"
+          );
+
+          if (
+            consecutiveServerFailures >=
+            autoPendingQueueConfig.serverFailurePauseThreshold
+          ) {
+            updateAutoQueueStatus("paused");
+            appendAutoLog("Paused after 3 consecutive server/network failures.", "error");
+            await waitWhileAutoQueuePaused();
+
+            if (autoQueueStoppedRef.current) {
+              break;
+            }
+
+            consecutiveServerFailures = 0;
+            continue;
+          }
+        }
+
+        const processedAfterThis = ids.indexOf(id) + 1;
+
+        if (processedAfterThis >= ids.length || autoQueueStoppedRef.current) {
+          continue;
+        }
+
+        await waitForAutoQueueDelay(
+          autoPendingQueueConfig.interRequestDelayMs,
+          "Next request"
+        );
+
+        if (processedAfterThis % 20 === 0) {
+          await waitForAutoQueueDelay(
+            autoPendingQueueConfig.twentyRecordCooldownMs,
+            "20-record cooldown"
+          );
+        }
+      }
+
+      setAutoQueue((current) => {
+        const remaining = Math.max(0, current.total - current.counts.processed);
+        const stopped = autoQueueStoppedRef.current;
+        const paused = autoQueueStatusRef.current === "paused";
+        const status = stopped ? "stopped" : paused ? "paused" : "completed";
+        autoQueueStatusRef.current = status;
+
+        return {
+          ...current,
+          completionMessage: stopped
+            ? `Stopped. Processed ${current.counts.processed}/${current.total}.`
+            : paused
+              ? `Paused. ${remaining} pending ID${remaining === 1 ? "" : "s"} remaining.`
+              : `Completed. ${current.counts.successful} successful, ${current.counts.failed} failed, ${current.counts.unresolved} unresolved, ${current.counts.needsVerification} needs verification.`,
+          currentId: stopped || paused ? current.currentId : "",
+          status
+        };
+      });
+    } finally {
+      const finalAutoQueueStatus = String(autoQueueStatusRef.current);
+
+      if (finalAutoQueueStatus !== "paused" || !autoQueueSubmittedUpdateRef.current) {
+        autoQueueSubmittedUpdateRef.current = false;
+        releaseAutoQueueLock();
+      }
+    }
+  }
+
+  function handlePauseAutoQueue() {
+    if (autoQueueStatusRef.current === "running") {
+      updateAutoQueueStatus("paused");
+      appendAutoLog("Paused. The active request, if any, will finish first.", "warning");
+    }
+  }
+
+  function handleResumeAutoQueue() {
+    if (autoQueueStatusRef.current === "paused") {
+      updateAutoQueueStatus("running");
+      appendAutoLog("Resumed.", "info");
+    }
+  }
+
+  function handleStopAutoQueue() {
+    if (isAutoQueueActive(autoQueueStatusRef.current)) {
+      autoQueueStoppedRef.current = true;
+      updateAutoQueueStatus("stopping");
+      appendAutoLog("Stopping after the active request finishes.", "warning");
+    }
+  }
 
   async function handleAdmissionLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (blockManualDuringAutoQueue(setAdmissionLookupState, setAdmissionLookupMessage)) {
+      return;
+    }
+
     const transactionId = admissionTransactionId.trim();
 
     if (!transactionId) {
@@ -4335,6 +5090,11 @@ function PaymentLookupView() {
 
   async function handleExamLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (blockManualDuringAutoQueue(setExamLookupState, setExamLookupMessage)) {
+      return;
+    }
+
     const transactionId = examTransactionId.trim();
 
     if (!transactionId) {
@@ -4390,6 +5150,11 @@ function PaymentLookupView() {
 
   async function handleUniformLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (blockManualDuringAutoQueue(setUniformLookupState, setUniformLookupMessage)) {
+      return;
+    }
+
     const transactionId = uniformTransactionId.trim();
 
     if (!transactionId) {
@@ -4445,6 +5210,11 @@ function PaymentLookupView() {
 
   async function handleTuitionLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (blockManualDuringAutoQueue(setTuitionLookupState, setTuitionLookupMessage)) {
+      return;
+    }
+
     const ids = tuitionIds.trim();
 
     if (tuitionProvider === "grayquest") {
@@ -4514,6 +5284,11 @@ function PaymentLookupView() {
 
   async function handleWizklubVerify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (blockManualDuringAutoQueue(setWizklubVerifyState, setWizklubVerifyMessage)) {
+      return;
+    }
+
     const matchedTransactionIds = getSingleTransactionId(wizklubTransactionId);
 
     if (!wizklubTransactionId.trim() || matchedTransactionIds.length === 0) {
@@ -4621,7 +5396,7 @@ function PaymentLookupView() {
       : []
   );
   const failedLookupCopyValue = failedLookupRows
-    .map((row) => `'${row.id.replace(/'/g, "\\'")}'`)
+    .map((row) => row.id)
     .join(", ");
 
   async function handleCopyFailedLookupIds() {
@@ -4654,6 +5429,11 @@ function PaymentLookupView() {
     return "border-[#8B3FD8]/40 bg-[#8B3FD8]/10 text-[#B983FF]";
   }
 
+  const autoQueueRemaining = Math.max(
+    0,
+    autoQueue.total - autoQueue.counts.processed
+  );
+
   return (
     <div className="mt-8 grid gap-7">
       <section className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
@@ -4664,6 +5444,11 @@ function PaymentLookupView() {
           const isUniformCard = item.key === "uniform";
           const isTuitionCard = item.key === "tuition";
           const isWizklubCard = item.key === "wizklub";
+          const autoCategory = normalizeAutoCategory(item.key);
+          const isAutoActive = isAutoQueueActive(autoQueue.status);
+          const isThisAutoCategory =
+            autoCategory !== null && autoQueue.category === autoCategory;
+          const isThisAutoProcessing = isThisAutoCategory && isAutoActive;
           const canSubmitLookup =
             isAdmissionCard ||
             isExamCard ||
@@ -4779,9 +5564,13 @@ function PaymentLookupView() {
                                   isDisabled &&
                                     "cursor-not-allowed border-white/8 bg-white/[.03] text-[#60708A] opacity-60 hover:border-white/8 hover:text-[#60708A]"
                                 )}
-                                disabled={isDisabled}
+                                disabled={isDisabled || isAutoActive || isAutoQueueLocked}
                                 key={provider}
                                 onClick={() => {
+                                  if (isAutoActive || isAutoQueueLocked) {
+                                    return;
+                                  }
+
                                   setTuitionProvider(provider);
                                   setTuitionFailedIds("");
                                 }}
@@ -4799,7 +5588,12 @@ function PaymentLookupView() {
                             "min-h-[72px] w-full resize-none rounded-[6px] border border-[#33445F] bg-[#061226]/76 px-4 py-3 pr-12 text-[13px] leading-5 text-white outline-none transition placeholder:text-[#A7B5CB]",
                             item.focus
                           )}
+                          disabled={isAutoActive || isAutoQueueLocked}
                           onChange={(event) => {
+                            if (isAutoActive || isAutoQueueLocked) {
+                              return;
+                            }
+
                             setTuitionIds(event.target.value);
                             setTuitionFailedIds("");
                           }}
@@ -4820,7 +5614,12 @@ function PaymentLookupView() {
                           "min-h-[72px] w-full resize-none rounded-[6px] border border-[#33445F] bg-[#061226]/76 px-4 py-3 pr-12 text-[13px] leading-5 text-white outline-none transition placeholder:text-[#A7B5CB]",
                           item.focus
                         )}
+                        disabled={isAutoActive || isAutoQueueLocked}
                         onChange={(event) => {
+                          if (isAutoActive || isAutoQueueLocked) {
+                            return;
+                          }
+
                           if (isAdmissionCard) {
                             setAdmissionTransactionId(event.target.value);
                             setAdmissionFailedIds("");
@@ -4855,26 +5654,133 @@ function PaymentLookupView() {
                       <ScanQrCode className="pointer-events-none absolute right-3.5 top-3.5 h-5 w-5 text-white" />
                     </div>
                   )}
-                  <Button
-                    className={cn(
-                      "h-[48px] w-full rounded-[6px] bg-gradient-to-r px-4 text-[15px]",
-                      item.button
-                    )}
-                    disabled={
-                      (canSubmitLookup && currentLookupState === "loading") ||
-                      (isTuitionCard && tuitionProvider === "grayquest")
-                    }
-                    style={wizklubButtonStyle}
-                    type={canSubmitLookup ? "submit" : "button"}
-                  >
-                    {canSubmitLookup && currentLookupState === "loading" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ShieldCheck className="h-4 w-4" />
-                    )}
-                    {"buttonLabel" in item ? item.buttonLabel : "Hit / Fetch"}
-                  </Button>
+                  <div className="grid gap-3">
+                    <Button
+                      className={cn(
+                        "h-[48px] w-full rounded-[6px] bg-gradient-to-r px-4 text-[15px]",
+                        item.button
+                      )}
+                      disabled={
+                        isAutoActive ||
+                        isAutoQueueLocked ||
+                        (canSubmitLookup && currentLookupState === "loading") ||
+                        (isTuitionCard && tuitionProvider === "grayquest")
+                      }
+                      style={wizklubButtonStyle}
+                      type={canSubmitLookup ? "submit" : "button"}
+                    >
+                      {canSubmitLookup && currentLookupState === "loading" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="h-4 w-4" />
+                      )}
+                      {"buttonLabel" in item ? item.buttonLabel : "Hit / Fetch"}
+                    </Button>
+                    {autoCategory ? (
+                      <Button
+                        className="h-[44px] w-full rounded-[6px] border border-[#00D7E7]/34 bg-[#00D7E7]/12 px-4 text-[13px] font-bold text-[#DFFAFF] hover:bg-[#00D7E7]/20"
+                        disabled={
+                          isAutoActive ||
+                          isAutoQueueLocked ||
+                          (isTuitionCard && tuitionProvider !== "razorpay")
+                        }
+                        onClick={() => handleAutoHitPendings(autoCategory)}
+                        type="button"
+                        variant="ghost"
+                      >
+                        {isThisAutoProcessing && autoQueue.status !== "paused" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCcw className="h-4 w-4" />
+                        )}
+                        {isThisAutoProcessing
+                          ? autoQueue.status === "paused"
+                            ? "Auto Paused"
+                            : "Auto Processing..."
+                          : "Auto Hit Pendings"}
+                      </Button>
+                    ) : null}
+                  </div>
                 </form>
+
+                {isThisAutoCategory &&
+                (isAutoActive || autoQueue.completionMessage || autoQueue.total > 0) ? (
+                  <div className="mt-4 rounded-[7px] border border-[#00D7E7]/24 bg-[#00D7E7]/8 px-3 py-3 text-[11px] leading-5 text-[#DFFAFF]">
+                    <div className="flex min-w-0 items-center justify-between gap-3">
+                      <span className="font-bold capitalize">
+                        {autoQueue.status === "fetching"
+                          ? "Fetching pendings"
+                          : autoQueue.status === "running"
+                            ? "Processing"
+                            : autoQueue.status === "paused"
+                              ? "Paused"
+                              : autoQueue.status === "stopping"
+                                ? "Stopping"
+                                : autoQueue.status}
+                      </span>
+                      <span className="shrink-0 font-mono">
+                        {autoQueue.counts.processed}/{autoQueue.total}
+                      </span>
+                    </div>
+                    {autoQueue.dateRange ? (
+                      <p className="mt-1 break-words text-[#8CA3C7]">
+                        {autoQueue.dateRange.start_time} to {autoQueue.dateRange.end_time}
+                      </p>
+                    ) : null}
+                    {autoQueue.currentId ? (
+                      <p className="mt-1 break-all font-mono">
+                        Current: {autoQueue.currentId}
+                      </p>
+                    ) : null}
+                    {autoQueue.cooldownLabel ? (
+                      <p className="mt-1 font-bold text-[#FFB72E]">
+                        {autoQueue.cooldownLabel}
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-[#A7B5CB]">
+                      Success {autoQueue.counts.successful} | Failed {autoQueue.counts.failed} | Remaining {autoQueueRemaining}
+                    </p>
+                    {autoQueue.completionMessage ? (
+                      <p className="mt-1 font-bold text-white">
+                        {autoQueue.completionMessage}
+                      </p>
+                    ) : null}
+                    {isAutoActive ? (
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <Button
+                          className="h-8 rounded-[5px] border border-[#FFB72E]/34 bg-[#FFB72E]/12 px-2 text-[10px] font-bold text-[#FFE5A6]"
+                          disabled={autoQueue.status !== "running"}
+                          onClick={handlePauseAutoQueue}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pause className="h-3 w-3" />
+                          Pause
+                        </Button>
+                        <Button
+                          className="h-8 rounded-[5px] border border-[#00E7B0]/34 bg-[#00E7B0]/12 px-2 text-[10px] font-bold text-[#CFFFF2]"
+                          disabled={autoQueue.status !== "paused"}
+                          onClick={handleResumeAutoQueue}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Play className="h-3 w-3" />
+                          Resume
+                        </Button>
+                        <Button
+                          className="h-8 rounded-[5px] border border-[#FF4D6D]/34 bg-[#FF4D6D]/12 px-2 text-[10px] font-bold text-[#FFD1DA]"
+                          disabled={!isAutoActive}
+                          onClick={handleStopAutoQueue}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Square className="h-3 w-3" />
+                          Stop
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {canSubmitLookup && currentLookupMessage ? (
                   <div
@@ -9842,7 +10748,7 @@ export default function Home() {
   const isSyncSectionsView = activeView === "Sync Master";
   const isSyncStudentView = activeView === "Sync Student";
   const isSyncUsersView = activeView === "Sync Users";
-  const isReportView = false;
+  const isReportView = activeView === "Wizklub Report";
   const isStudentsView = activeView === "Students";
   const isStudentBookListView = activeView === "Book Lists";
   const isUniformListsView = activeView === "Uniform Lists";
