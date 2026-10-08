@@ -24,6 +24,7 @@ import {
   Filter,
   FileText,
   GraduationCap,
+  History,
   IndianRupee,
   Info,
   Landmark,
@@ -3277,7 +3278,7 @@ function WizklubReportStat({
   );
 }
 
-function WizklubReportsView() {
+function WizklubReportsView({ role }: { role: DashboardRole | null }) {
   const [reportData, setReportData] = useState<WizklubReportRecord[]>([]);
   const [reportState, setReportState] = useState<LookupState>("loading");
   const [reportMessage, setReportMessage] = useState("Loading Wizklub report...");
@@ -3531,6 +3532,10 @@ function WizklubReportsView() {
     : 0;
   const link2Percentage = totalLinkStudents ? 100 - link1Percentage : 0;
   const isReportLoading = reportState === "loading";
+  const shouldBlurCollectionAmounts = role === "wizklub";
+  const collectionAmountClassName = shouldBlurCollectionAmounts
+    ? "select-none blur-[5px]"
+    : "";
 
   return (
     <div className="mt-5 grid min-w-0 gap-4">
@@ -3670,9 +3675,9 @@ function WizklubReportsView() {
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <WizklubReportStat accent="#00D7E7" icon={Link} label="Total Payment Links" tone="filtered" value={formatCompactNumber(filteredSummary.totalPaymentLinks)} />
           <WizklubReportStat accent="#00E07D" icon={UserRoundSearch} label="Total Students Paid" tone="filtered" value={formatCompactNumber(filteredSummary.totalStudentsPaid)} />
-          <WizklubReportStat accent="#315EFF" blurred icon={IndianRupee} label="Total Collection" tone="filtered" value={formatReportCurrency(filteredSummary.totalCollection)} />
-          <WizklubReportStat accent="#8B5CF6" blurred icon={ShoppingBag} label="Total Transactions" tone="filtered" value={formatCompactNumber(filteredSummary.totalTransactions)} />
-          <WizklubReportStat accent="#F59E0B" icon={Compass} label="Avg. Order Value" tone="filtered" value={formatReportCurrency(filteredSummary.averageOrderValue)} />
+          <WizklubReportStat accent="#315EFF" blurred={shouldBlurCollectionAmounts} icon={IndianRupee} label="Total Collection" tone="filtered" value={formatReportCurrency(filteredSummary.totalCollection)} />
+          <WizklubReportStat accent="#8B5CF6" icon={ShoppingBag} label="Total Transactions" tone="filtered" value={formatCompactNumber(filteredSummary.totalTransactions)} />
+          <WizklubReportStat accent="#F59E0B" blurred={shouldBlurCollectionAmounts} icon={Compass} label="Avg. Order Value" tone="filtered" value={formatReportCurrency(filteredSummary.averageOrderValue)} />
         </section>
       ) : null}
 
@@ -3812,7 +3817,14 @@ function WizklubReportsView() {
                   {["Students", "Transactions", "Collection", "Success Rate"].map((label, index) => (
                     <div className="min-w-0 border-r border-white/8 last:border-r-0" key={label}>
                       <p className="text-[12px] text-[#C7D2E4]">{label}</p>
-                      <p className="mt-1 truncate text-[18px] font-bold text-white">{[students, transactions, collection, rate][index]}</p>
+                      <p
+                        className={cn(
+                          "mt-1 truncate text-[18px] font-bold text-white",
+                          label === "Collection" && collectionAmountClassName
+                        )}
+                      >
+                        {[students, transactions, collection, rate][index]}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -3885,7 +3897,7 @@ function WizklubReportsView() {
                         <tr className="text-[#D8E4F7]" key={`${record.admissionNo}-${record.razorpayPaymentId || record.id}-${index}`}>
                           {row.map((cell, cellIndex) => (
                             <td className="border-b border-r border-[#263852]/70 px-4 py-3 last:border-r-0" key={`${record.id}-${cellIndex}`}>
-                              {cellIndex === 1 ? <span className="font-semibold text-[#00D7E7] underline">{cell}</span> : cellIndex === 4 ? formatReportCurrency(Number(String(cell).replace(/,/g, ""))) : cellIndex === 5 ? (
+                              {cellIndex === 1 ? <span className="font-semibold text-[#00D7E7] underline">{cell}</span> : cellIndex === 4 ? <span className={collectionAmountClassName}>{formatReportCurrency(Number(String(cell).replace(/,/g, "")))}</span> : cellIndex === 5 ? (
                                 <span className={cn("inline-flex flex-col rounded-[5px] px-3 py-1 font-bold text-white", cell.includes("1") ? "bg-[#008E53]" : "bg-[#315EFF]")}>
                                   <span>{cell}</span>
                                   <span className="text-[10px] font-semibold text-white/80">
@@ -5694,7 +5706,7 @@ function PaymentLookupView() {
                       )}
                       {"buttonLabel" in item ? item.buttonLabel : "Hit / Fetch"}
                     </Button>
-                    {autoCategory ? (
+                    {isTuitionCard && autoCategory ? (
                       <Button
                         className="h-[44px] w-full rounded-[6px] border border-[#00D7E7]/34 bg-[#00D7E7]/12 px-4 text-[13px] font-bold text-[#DFFAFF] hover:bg-[#00D7E7]/20"
                         disabled={
@@ -6931,6 +6943,57 @@ function readNestedValue(source: unknown, keys: string[]): string {
   return "";
 }
 
+type StudentHistoryRow = {
+  academicYear: string;
+  activeStatus: string;
+  branchName: string;
+  className: string;
+  orientation: string;
+  studentType: string;
+  transferStatus: string;
+  updatedDateTime: string;
+};
+
+function formatAcademicYearFromId(value: string) {
+  const academicYearId = Number(value);
+
+  if (!Number.isFinite(academicYearId)) {
+    return "";
+  }
+
+  const startYear = academicYearId + 2008;
+
+  return `${startYear}-${startYear + 1}`;
+}
+
+function mapStudentHistoryRows(payload: unknown): StudentHistoryRow[] {
+  const root =
+    payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const rows = Array.isArray(root.data) ? root.data : [];
+
+  return rows.map((row) => {
+    const record =
+      row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+
+    const academicYear =
+      readRecordValue(record, "academic_year", "") ||
+      formatAcademicYearFromId(readRecordValue(record, "academic_year_id", ""));
+
+    return {
+      academicYear: academicYear || "-",
+      activeStatus:
+        readRecordValue(record, "status_label", "") ||
+        readRecordValue(record, "active_status"),
+      branchName: readRecordValue(record, "branch_name"),
+      className: readRecordValue(record, "class_name"),
+      orientation: readRecordValue(record, "orientation"),
+      studentType: readRecordValue(record, "student_type"),
+      transferStatus: readRecordValue(record, "transfer_status"),
+      updatedDateTime: readRecordValue(record, "updated_date_time")
+    };
+  });
+}
+
 type StoredTransactionLookupState = {
   detail: unknown;
   lookupMessage: string;
@@ -7390,6 +7453,11 @@ function StudentsView() {
   const [studentSyncState, setStudentSyncState] = useState<LookupState>("idle");
   const [studentSyncMessage, setStudentSyncMessage] = useState("");
   const [studentDetails, setStudentDetails] = useState<unknown>(null);
+  const [studentHistoryRows, setStudentHistoryRows] = useState<StudentHistoryRow[]>([]);
+  const [studentHistoryState, setStudentHistoryState] =
+    useState<LookupState>("idle");
+  const [studentHistoryMessage, setStudentHistoryMessage] = useState("");
+  const [isStudentHistoryOpen, setIsStudentHistoryOpen] = useState(false);
   const studentName =
     readNestedValue(studentDetails, [
       "student_name",
@@ -7565,6 +7633,59 @@ function StudentsView() {
     setStudentSyncState("idle");
     setStudentSyncMessage("");
     setStudentDetails(null);
+    setStudentHistoryRows([]);
+    setStudentHistoryState("idle");
+    setStudentHistoryMessage("");
+    setIsStudentHistoryOpen(false);
+  }
+
+  async function handleStudentHistoryLookup() {
+    const admissionNo = writeStoredAdmissionNo(studentAdmissionNo);
+
+    if (!admissionNo.trim()) {
+      setStudentHistoryState("error");
+      setStudentHistoryMessage("Please enter an admission number.");
+      setIsStudentHistoryOpen(true);
+      return;
+    }
+
+    setStudentAdmissionNo(admissionNo);
+    setStudentHistoryRows([]);
+    setStudentHistoryState("loading");
+    setStudentHistoryMessage("Fetching student history. Please wait.");
+    setIsStudentHistoryOpen(true);
+
+    try {
+      const response = await fetch(
+        `/api/student/history?admissionNo=${encodeURIComponent(admissionNo)}`,
+        { cache: "no-store" }
+      );
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result && typeof result.message === "string"
+            ? result.message
+            : "Unable to fetch student history."
+        );
+      }
+
+      const rows = mapStudentHistoryRows(result.data);
+
+      setStudentHistoryRows(rows);
+      setStudentHistoryState("success");
+      setStudentHistoryMessage(
+        rows.length
+          ? `Loaded ${rows.length} history record${rows.length === 1 ? "" : "s"}.`
+          : "No student history found."
+      );
+    } catch (error) {
+      setStudentHistoryRows([]);
+      setStudentHistoryState("error");
+      setStudentHistoryMessage(
+        error instanceof Error ? error.message : "Unable to fetch student history."
+      );
+    }
   }
 
   return (
@@ -7691,6 +7812,20 @@ function StudentsView() {
                 <span className="h-2 w-2 rounded-full bg-[#00E7B0]" />
                 Active
               </span>
+              <Button
+                className="h-9 rounded-[6px] border border-[#315EFF]/36 bg-[#315EFF]/14 px-3 text-[12px] font-bold text-[#DDE7FF] hover:bg-[#315EFF]/22"
+                disabled={studentHistoryState === "loading"}
+                onClick={handleStudentHistoryLookup}
+                type="button"
+                variant="ghost"
+              >
+                {studentHistoryState === "loading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <History className="h-4 w-4" />
+                )}
+                History
+              </Button>
             </div>
             <p className="mt-2 text-[14px] text-[#AFC0D9]">
               Student ID: <span className="font-semibold text-[#6F8BFF]">{studentId}</span>
@@ -7779,6 +7914,142 @@ function StudentsView() {
       </section>
         </>
       )}
+      <AnimatePresence>
+        {isStudentHistoryOpen ? (
+          <motion.div
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[60] grid place-items-center bg-[#010816]/78 p-4 backdrop-blur-sm"
+            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+          >
+            <motion.section
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              aria-modal="true"
+              className="max-h-[86vh] w-full max-w-6xl overflow-hidden rounded-[8px] border border-[#315EFF]/42 bg-[#061226] shadow-[0_28px_90px_rgba(0,0,0,.46)]"
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              role="dialog"
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              <div className="flex min-w-0 items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-9 w-9 place-items-center rounded-[8px] bg-[#315EFF]/18 text-[#7EA0FF]">
+                      <History className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-[17px] font-bold text-white">
+                        Student History
+                      </h3>
+                      <p className="mt-1 text-[12px] text-[#8CA3C7]">
+                        Admission No: {studentAdmissionNo}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  aria-label="Close student history"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-[6px] border border-white/10 bg-white/[.035] text-[#C9D4E7] transition hover:border-[#FF4D6D]/40 hover:text-white"
+                  onClick={() => setIsStudentHistoryOpen(false)}
+                  type="button"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="max-h-[calc(86vh-74px)] overflow-auto p-5">
+                {studentHistoryMessage ? (
+                  <div
+                    className={cn(
+                      "mb-4 rounded-[8px] border px-4 py-3 text-sm font-semibold",
+                      studentHistoryState === "success" &&
+                        "border-[#00E7B0]/25 bg-[#00E7B0]/10 text-[#00E7B0]",
+                      studentHistoryState === "error" &&
+                        "border-[#FF4D6D]/25 bg-[#FF4D6D]/10 text-[#FF4D6D]",
+                      studentHistoryState === "loading" &&
+                        "border-[#4D6FFF]/25 bg-[#4D6FFF]/10 text-[#6F8BFF]"
+                    )}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {studentHistoryState === "loading" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      {studentHistoryMessage}
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="overflow-x-auto rounded-[8px] border border-[#315EFF]/26 bg-[#07172D]/72">
+                  <table className="w-full min-w-[980px] border-collapse">
+                    <thead>
+                      <tr className="bg-white/[.055] text-left text-[12px] font-semibold text-[#C9D4E7]">
+                        <th className="px-4 py-3">#</th>
+                        <th className="px-4 py-3">Academic Year</th>
+                        <th className="px-4 py-3">Branch</th>
+                        <th className="px-4 py-3">Class</th>
+                        <th className="px-4 py-3">Orientation</th>
+                        <th className="px-4 py-3">Student Type</th>
+                        <th className="px-4 py-3">Transfer Status</th>
+                        <th className="px-4 py-3">Active Status</th>
+                        <th className="px-4 py-3">Updated Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/8">
+                      {studentHistoryRows.length ? (
+                        studentHistoryRows.map((row, index) => (
+                          <tr
+                            className="text-[12px] text-[#D6E0F1]"
+                            key={`${row.updatedDateTime}-${row.className}-${index}`}
+                          >
+                            <td className="px-4 py-3">{index + 1}</td>
+                            <td className="px-4 py-3 font-semibold text-white">
+                              {row.academicYear}
+                            </td>
+                            <td className="px-4 py-3">{row.branchName}</td>
+                            <td className="px-4 py-3 font-semibold text-white">
+                              {row.className}
+                            </td>
+                            <td className="px-4 py-3">{row.orientation}</td>
+                            <td className="px-4 py-3">{row.studentType}</td>
+                            <td className="px-4 py-3">{row.transferStatus}</td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={cn(
+                                  "inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold",
+                                  row.activeStatus.toLowerCase().includes("inactive") ||
+                                    row.activeStatus.toLowerCase() === "no"
+                                    ? "bg-[#FF4D6D]/14 text-[#FF8096]"
+                                    : "bg-[#00E7B0]/12 text-[#00E7B0]"
+                                )}
+                              >
+                                {row.activeStatus}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-[11px]">
+                              {row.updatedDateTime}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td
+                            className="px-4 py-10 text-center text-[13px] font-semibold text-[#8CA3C7]"
+                            colSpan={9}
+                          >
+                            {studentHistoryState === "loading"
+                              ? "Loading history..."
+                              : "No history records to show."}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -11319,7 +11590,7 @@ export default function Home() {
         ) : isSyncUsersView ? (
           <SyncUsersView />
         ) : isReportView ? (
-          <WizklubReportsView />
+          <WizklubReportsView role={dashboardRole} />
         ) : isStudentsView ? (
           <StudentsView />
         ) : isStudentBookListView ? (
