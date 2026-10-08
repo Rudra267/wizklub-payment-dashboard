@@ -3897,7 +3897,7 @@ function WizklubReportsView({ role }: { role: DashboardRole | null }) {
                         <tr className="text-[#D8E4F7]" key={`${record.admissionNo}-${record.razorpayPaymentId || record.id}-${index}`}>
                           {row.map((cell, cellIndex) => (
                             <td className="border-b border-r border-[#263852]/70 px-4 py-3 last:border-r-0" key={`${record.id}-${cellIndex}`}>
-                              {cellIndex === 1 ? <span className="font-semibold text-[#00D7E7] underline">{cell}</span> : cellIndex === 4 ? <span className={collectionAmountClassName}>{formatReportCurrency(Number(String(cell).replace(/,/g, "")))}</span> : cellIndex === 5 ? (
+                              {cellIndex === 1 ? <span className="font-semibold text-[#00D7E7] underline">{cell}</span> : cellIndex === 4 ? formatReportCurrency(Number(String(cell).replace(/,/g, ""))) : cellIndex === 5 ? (
                                 <span className={cn("inline-flex flex-col rounded-[5px] px-3 py-1 font-bold text-white", cell.includes("1") ? "bg-[#008E53]" : "bg-[#315EFF]")}>
                                   <span>{cell}</span>
                                   <span className="text-[10px] font-semibold text-white/80">
