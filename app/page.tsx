@@ -6697,6 +6697,12 @@ function normalizeTransactionRow(data: unknown) {
   const status =
     readNestedValue(data, ["payment_status", "paymentStatus", "status"]) ||
     "Not available";
+  const academicYear =
+    readNestedValue(data, ["academic_year", "academicYear", "year"]) ||
+    formatAcademicYearFromId(
+      readNestedValue(data, ["academic_year_id", "academicYearId", "academic_id"])
+    ) ||
+    "Not available";
   const orderId =
     readNestedValue(data, [
       "razorpay_order_id",
@@ -6738,6 +6744,7 @@ function normalizeTransactionRow(data: unknown) {
     addedOn:
       readNestedValue(data, ["added_on", "addedOn", "created_at", "createdAt"]) ||
       "Not available",
+    academicYear,
     amount:
       formatAmount(readNestedValue(data, ["amount_initiate", "amount", "fee_amount"]) || ""),
     feeType:
@@ -6961,7 +6968,10 @@ function formatAcademicYearFromId(value: string) {
     return "";
   }
 
-  const startYear = academicYearId + 2008;
+  const startYear =
+    academicYearId >= 100 && (academicYearId - 1) % 20 === 0
+      ? 2017 + (academicYearId - 1) / 20
+      : academicYearId + 2008;
 
   return `${startYear}-${startYear + 1}`;
 }
@@ -7304,7 +7314,7 @@ function TransactionsView() {
         ) : null}
 
         <div className="mt-5 overflow-x-auto rounded-[7px] border border-white/8 bg-[#07172D]/58">
-          <table className="w-full min-w-[1280px] border-collapse">
+          <table className="w-full min-w-[1380px] border-collapse">
             <thead>
               <tr className="bg-white/[.045] text-left text-[12px] font-semibold text-[#C9D4E7]">
                 <th className="px-4 py-4">Added On</th>
@@ -7312,6 +7322,7 @@ function TransactionsView() {
                 <th className="px-4 py-4">Varna Receipt ID</th>
                 <th className="px-4 py-4">Amount</th>
                 <th className="px-4 py-4">Fee Type</th>
+                <th className="px-4 py-4">Academic Year</th>
                 <th className="px-4 py-4">Payment Status</th>
                 <th className="px-4 py-4">Gateway</th>
                 <th className="px-4 py-4">Order ID</th>
@@ -7335,6 +7346,7 @@ function TransactionsView() {
                     </td>
                     <td className="px-4 py-3 font-semibold text-[#EAF1FF]">{row.amount}</td>
                     <td className="px-4 py-3">{row.feeType}</td>
+                    <td className="px-4 py-3">{row.academicYear}</td>
                     <td className="px-4 py-3">
                       <span
                         className={cn(
@@ -7386,7 +7398,7 @@ function TransactionsView() {
                 ))
               ) : (
                 <tr>
-                  <td className="px-4 py-10 text-center text-[13px] text-[#8CA3C7]" colSpan={10}>
+                  <td className="px-4 py-10 text-center text-[13px] text-[#8CA3C7]" colSpan={11}>
                     Select a table, enter search values, and click Search.
                   </td>
                 </tr>
