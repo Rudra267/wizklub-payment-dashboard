@@ -5480,7 +5480,7 @@ function PaymentLookupView() {
             autoCategory !== null && autoQueue.category === autoCategory;
           const isThisAutoProcessing = isThisAutoCategory && isAutoActive;
           const canAutoHitPendings =
-            autoCategory !== null && (isExamCard || isTuitionCard);
+            autoCategory !== null && isTuitionCard;
           const canSubmitLookup =
             isAdmissionCard ||
             isExamCard ||
