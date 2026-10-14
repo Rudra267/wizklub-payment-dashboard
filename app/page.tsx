@@ -5479,6 +5479,8 @@ function PaymentLookupView() {
           const isThisAutoCategory =
             autoCategory !== null && autoQueue.category === autoCategory;
           const isThisAutoProcessing = isThisAutoCategory && isAutoActive;
+          const canAutoHitPendings =
+            autoCategory !== null && (isExamCard || isTuitionCard);
           const canSubmitLookup =
             isAdmissionCard ||
             isExamCard ||
@@ -5706,7 +5708,7 @@ function PaymentLookupView() {
                       )}
                       {"buttonLabel" in item ? item.buttonLabel : "Hit / Fetch"}
                     </Button>
-                    {isTuitionCard && autoCategory ? (
+                    {canAutoHitPendings ? (
                       <Button
                         className="h-[44px] w-full rounded-[6px] border border-[#00D7E7]/34 bg-[#00D7E7]/12 px-4 text-[13px] font-bold text-[#DFFAFF] hover:bg-[#00D7E7]/20"
                         disabled={
@@ -9245,13 +9247,18 @@ const uniformKitRows = [
   }
 ];
 
-type UniformProductRow = {
+type UniformProductSizeOption = {
   defaultQty: string;
-  name: string;
+  productId: string;
   size: string;
   spmid: string;
   totalPrice: string;
   unitPrice: string;
+};
+
+type UniformProductRow = {
+  name: string;
+  variants: UniformProductSizeOption[];
 };
 
 type UniformKitRow = {
@@ -9294,36 +9301,109 @@ function formatUniformAmount(value: string) {
   });
 }
 
+function findUniformPayloadRecord(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+
+  const record = payload as Record<string, unknown>;
+
+  if (
+    Array.isArray(record.products_list) ||
+    "academic_year" in record ||
+    "admission_no" in record
+  ) {
+    return record;
+  }
+
+  for (const key of ["data", "result", "response", "payload"]) {
+    const nestedRecord = findUniformPayloadRecord(record[key]);
+
+    if (Object.keys(nestedRecord).length > 0) {
+      return nestedRecord;
+    }
+  }
+
+  return record;
+}
+
+function normalizeUniformProductName(productName: string, size: string) {
+  const escapedSize = size.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const withoutSize = escapedSize
+    ? productName.replace(new RegExp(`\\s*-?\\s*${escapedSize}\\s*$`), "")
+    : productName;
+
+  return withoutSize
+    .replace(/\s*:\s*/g, " - ")
+    .replace(/\s*-\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function mapUniformListResponse(payload: unknown) {
-  const record =
-    payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const record = findUniformPayloadRecord(payload);
   const productGroups = Array.isArray(record.products_list)
     ? record.products_list
     : [];
-  const kits: UniformKitRow[] = productGroups.map((group) => {
+  const kits: UniformKitRow[] = productGroups.flatMap((group) => {
     const groupRecord =
       group && typeof group === "object" ? (group as Record<string, unknown>) : {};
     const products = Array.isArray(groupRecord.products) ? groupRecord.products : [];
-    const mappedProducts = products.map((product) => {
+    const productGroupsByName = new Map<string, UniformProductRow>();
+
+    products.forEach((product) => {
       const productRecord =
         product && typeof product === "object"
           ? (product as Record<string, unknown>)
           : {};
       const defaultQty = readRecordValue(productRecord, "default_qty", "0");
+      const productName = readRecordValue(productRecord, "product_name", "");
+      const size = readRecordValue(productRecord, "size", "");
       const unitPrice = readRecordValue(productRecord, "sale_price", "0.00");
       const totalPrice = (Number(defaultQty) * Number(unitPrice)).toFixed(2);
+      const name = normalizeUniformProductName(productName, size);
 
-      return {
+      if (!name) {
+        return;
+      }
+
+      const existingProduct = productGroupsByName.get(name) || {
+        name,
+        variants: []
+      };
+
+      existingProduct.variants.push({
         defaultQty,
-        name: readRecordValue(productRecord, "product_name"),
-        size: readRecordValue(productRecord, "size"),
-        spmid: readRecordValue(productRecord, "spmid"),
+        productId: readRecordValue(productRecord, "product_id", ""),
+        size,
+        spmid: readRecordValue(productRecord, "spmid", ""),
         totalPrice,
         unitPrice
-      };
+      });
+      productGroupsByName.set(name, existingProduct);
     });
+
+    const mappedProducts = Array.from(productGroupsByName.values()).map((product) => ({
+      ...product,
+      variants: product.variants.sort(
+        (first, second) => Number(first.size) - Number(second.size)
+      )
+    }));
+
+    if (!mappedProducts.length) {
+      return [];
+    }
+
     const price = mappedProducts
-      .reduce((sum, product) => sum + Number(product.totalPrice || 0), 0)
+      .reduce(
+        (sum, product) =>
+          sum +
+          product.variants.reduce(
+            (productSum, variant) => productSum + Number(variant.totalPrice || 0),
+            0
+          ),
+        0
+      )
       .toFixed(2);
 
     return {
@@ -9337,14 +9417,15 @@ function mapUniformListResponse(payload: unknown) {
   });
 
   return {
+    hasProductList: Array.isArray(record.products_list),
     kits,
     summary: {
-      academicYear: readRecordValue(record, "academic_year", defaultUniformStudentSummary.academicYear),
+      academicYear: readRecordValue(record, "academic_year", "-"),
       admissionNo: readRecordValue(record, "admission_no", defaultUniformStudentSummary.admissionNo),
-      className: readRecordValue(record, "academic_id", defaultUniformStudentSummary.className).replace("-", " - "),
-      gender: readRecordValue(record, "gender", defaultUniformStudentSummary.gender),
-      school: readRecordValue(record, "school", defaultUniformStudentSummary.school),
-      studentName: defaultUniformStudentSummary.studentName
+      className: readRecordValue(record, "academic_id", "-").replace("-", " - "),
+      gender: readRecordValue(record, "gender", "-"),
+      school: readRecordValue(record, "school", "-"),
+      studentName: readRecordValue(record, "student_name", "Student Name")
     }
   };
 }
@@ -9359,6 +9440,12 @@ function UniformListsView() {
   const [openUniformKits, setOpenUniformKits] = useState<Record<string, boolean>>({
     "Techno Boys Belt - Admiral": true
   });
+  const [selectedUniformSizes, setSelectedUniformSizes] = useState<Record<string, string>>(
+    {}
+  );
+  const [openUniformSizeMenus, setOpenUniformSizeMenus] = useState<
+    Record<string, boolean>
+  >({});
   const totalProducts = uniformRows.reduce(
     (count, kit) => count + kit.products.length,
     0
@@ -9367,7 +9454,8 @@ function UniformListsView() {
     (count, kit) =>
       count +
       kit.products.reduce(
-        (productCount, product) => productCount + Number(product.defaultQty || 0),
+        (productCount, product) =>
+          productCount + Number(product.variants[0]?.defaultQty || 0),
         0
       ),
     0
@@ -9410,13 +9498,29 @@ function UniformListsView() {
       }
 
       const mapped = mapUniformListResponse(result.data);
+      const openKits = mapped.kits.reduce<Record<string, boolean>>((current, kit) => {
+        current[kit.name] = true;
+
+        return current;
+      }, {});
 
       setUniformRows(mapped.kits);
       setUniformSummary(mapped.summary);
-      setOpenUniformKits({});
+      setOpenUniformKits(openKits);
+      setSelectedUniformSizes({});
+      setOpenUniformSizeMenus({});
       setUniformLookupState("success");
-      setUniformLookupMessage("Uniform list fetched successfully.");
+      setUniformLookupMessage(
+        mapped.kits.length > 0
+          ? result.message || "Uniform list fetched successfully."
+          : mapped.hasProductList
+            ? "Uniform list fetched successfully, but no products are available for this student."
+            : "Uniform API responded successfully, but the products list was not found in the response."
+      );
     } catch (error) {
+      setUniformRows([]);
+      setSelectedUniformSizes({});
+      setOpenUniformSizeMenus({});
       setUniformLookupState("error");
       setUniformLookupMessage(
         error instanceof Error ? error.message : "Unable to fetch uniform list."
@@ -9431,6 +9535,8 @@ function UniformListsView() {
     setUniformRows([]);
     setUniformSummary(defaultUniformStudentSummary);
     setOpenUniformKits({});
+    setSelectedUniformSizes({});
+    setOpenUniformSizeMenus({});
   }
 
   function toggleUniformKit(name: string) {
@@ -9438,6 +9544,22 @@ function UniformListsView() {
       ...current,
       [name]: !current[name]
     }));
+  }
+
+  function getUniformProductKey(kit: UniformKitRow, product: UniformProductRow) {
+    return `${kit.code || kit.name}-${product.name}`;
+  }
+
+  function getSelectedUniformVariant(
+    kit: UniformKitRow,
+    product: UniformProductRow
+  ) {
+    const selectedSpmid = selectedUniformSizes[getUniformProductKey(kit, product)];
+
+    return (
+      product.variants.find((variant) => variant.spmid === selectedSpmid) ||
+      product.variants[0]
+    );
   }
 
   return (
@@ -9514,7 +9636,9 @@ function UniformListsView() {
             </div>
             <div>
               <p className="text-[12px] text-[#AFC0D9]">Student Details</p>
-              <h2 className="text-[20px] font-bold text-white">Student Name</h2>
+              <h2 className="text-[20px] font-bold text-white">
+                {uniformSummary.studentName}
+              </h2>
               <p className="text-[12px] text-[#C9D4E7]">
                 Admission No:{" "}
                 <span className="font-semibold">{uniformSummary.admissionNo}</span>
@@ -9546,6 +9670,24 @@ function UniformListsView() {
       </section>
       ) : null}
 
+      {uniformLookupState === "success" && uniformRows.length === 0 ? (
+        <section className="rounded-[8px] border border-[#315EFF]/30 bg-[linear-gradient(145deg,rgba(8,20,39,.82),rgba(3,11,24,.62))] p-5">
+          <div className="flex items-center gap-3">
+            <Package className="h-5 w-5 text-[#6F8BFF]" />
+            <div>
+              <h2 className="text-[16px] font-bold text-white">No Uniform Products</h2>
+              <p className="mt-1 text-[13px] text-[#AFC0D9]">
+                The API call completed, but no product categories were returned for{" "}
+                <span className="font-semibold text-white">
+                  {uniformSummary.admissionNo}
+                </span>
+                .
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {uniformRows.length > 0 ? (
       <Card className="rounded-[8px] border-[#315EFF]/38 bg-[linear-gradient(145deg,rgba(8,20,39,.78),rgba(3,11,24,.62))] p-4 sm:p-5">
         <div className="flex items-center gap-3">
@@ -9556,65 +9698,21 @@ function UniformListsView() {
           </span>
         </div>
 
-        <section className="mt-5 grid gap-4 lg:grid-cols-3">
-          {[
-            {
-              icon: Package,
-              label: "Total Categories",
-              subLabel: "Uniform categories available",
-              value: uniformRows.length
-            },
-            {
-              icon: ShoppingBag,
-              label: "Total Products",
-              subLabel: "Products in all kits",
-              value: totalProducts
-            },
-            {
-              icon: ShoppingBag,
-              label: "Total Quantity",
-              subLabel: "Default quantity",
-              value: totalQuantity
-            }
-          ].map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <div
-                className="rounded-[8px] border border-[#315EFF]/20 bg-[#061226]/62 p-5"
-                key={item.label}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="grid h-11 w-11 place-items-center rounded-[8px] bg-[#00E7B0]/12 text-[#00E7B0]">
-                    <Icon className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="text-[12px] text-[#AFC0D9]">{item.label}</p>
-                    <p className="text-[24px] font-bold text-white">{item.value}</p>
-                    <p className="text-[12px] text-[#AFC0D9]">{item.subLabel}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </section>
-
         <div className="mt-5 grid gap-3">
           {uniformRows.map((kit) => {
-            const isOpen = Boolean(openUniformKits[kit.name]);
+            const product = kit.products[0];
+            const productKey = product ? getUniformProductKey(kit, product) : "";
+            const selectedVariant = product
+              ? getSelectedUniformVariant(kit, product)
+              : undefined;
 
             return (
               <section
-                className="overflow-hidden rounded-[8px] border border-[#315EFF]/22 bg-[#07172D]/58"
+                className="rounded-[8px] border border-[#315EFF]/22 bg-[#07172D]/58 p-4"
                 key={kit.name}
               >
-                <button
-                  aria-expanded={isOpen}
-                  className="grid w-full gap-4 p-4 text-left transition hover:bg-white/[.025] md:grid-cols-[120px_minmax(0,1fr)_auto]"
-                  onClick={() => toggleUniformKit(kit.name)}
-                  type="button"
-                >
-                  <div className="relative h-[96px] w-[128px] overflow-hidden rounded-[7px] border border-white/10 bg-white">
+                <div className="grid gap-5 lg:grid-cols-[136px_minmax(260px,1fr)_minmax(260px,.85fr)_120px_140px] lg:items-center">
+                  <div className="relative h-[96px] w-[128px] overflow-hidden rounded-[7px] border border-white/10 bg-white lg:mr-2">
                     {kit.imageUrl ? (
                       <img
                         alt={kit.name}
@@ -9636,60 +9734,98 @@ function UniformListsView() {
                     </div>
                     <p className="mt-2 text-[13px] text-[#AFC0D9]">{kit.description}</p>
                   </div>
-                  <div className="flex items-center gap-8 md:justify-end">
-                    <span className="text-[13px] font-semibold text-[#C9D4E7]">
-                      {kit.products.length} Product{kit.products.length === 1 ? "" : "s"}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 text-[#8CA3C7] transition",
-                        isOpen && "rotate-180"
-                      )}
-                    />
-                  </div>
-                </button>
+                  <label className="grid gap-2">
+                    <span className="text-[11px] font-semibold text-[#AFC0D9]">Size</span>
+                    <div className="relative">
+                      <button
+                        className="flex h-10 w-full items-center justify-between gap-3 rounded-[6px] border border-[#34445E] bg-[#061226] px-3 text-left outline-none transition hover:border-[#4B5D79] focus:border-[#00E7B0]/70 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={!product}
+                        onClick={() =>
+                          setOpenUniformSizeMenus((current) => ({
+                            ...current,
+                            [productKey]: !current[productKey]
+                          }))
+                        }
+                        type="button"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="text-[12px] font-bold text-white">
+                            Size {selectedVariant?.size || "-"}
+                          </span>
+                          {selectedVariant?.spmid ? (
+                            <span className="rounded-full border border-[#7C3AED]/30 bg-[#7C3AED]/18 px-2 py-0.5 text-[10px] font-bold text-[#C4B5FD]">
+                              SPMID {selectedVariant.spmid}
+                            </span>
+                          ) : null}
+                        </span>
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-[#8CA3C7] transition",
+                            openUniformSizeMenus[productKey] && "rotate-180"
+                          )}
+                        />
+                      </button>
+                      {product && openUniformSizeMenus[productKey] ? (
+                        <div className="absolute left-0 right-0 top-[44px] z-20 max-h-[260px] overflow-auto rounded-[6px] border border-[#34445E] bg-[#061226] p-1 shadow-2xl shadow-black/30">
+                          {product.variants.map((variant) => {
+                            const isSelected = selectedVariant?.spmid === variant.spmid;
 
-                {isOpen ? (
-                  <div className="overflow-x-auto border-t border-white/8 px-4 pb-4">
-                    <table className="w-full min-w-[760px] border-collapse">
-                      <thead>
-                        <tr className="bg-white/[.055] text-left text-[12px] font-semibold text-[#C9D4E7]">
-                          <th className="px-4 py-3">#</th>
-                          <th className="px-4 py-3">Product Name</th>
-                          <th className="px-4 py-3 text-center">Size</th>
-                          <th className="px-4 py-3 text-center">Default Qty</th>
-                          <th className="px-4 py-3 text-right">Unit Price (Rs.)</th>
-                          <th className="px-4 py-3 text-right">Total Price (Rs.)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/8">
-                        {kit.products.map((product, index) => (
-                          <tr
-                            className="text-[12px] text-[#D6E0F1]"
-                            key={`${kit.name}-${product.name}-${index}`}
-                          >
-                            <td className="px-4 py-3">{index + 1}</td>
-                            <td className="px-4 py-3 font-medium text-white">
-                              {product.name}
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className="inline-flex min-w-7 justify-center rounded-full bg-[#7C3AED]/18 px-2 py-1 text-[11px] font-bold text-[#C4B5FD]">
-                                {product.size}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">{product.defaultQty}</td>
-                            <td className="px-4 py-3 text-right font-semibold text-white">
-                              {product.unitPrice}
-                            </td>
-                            <td className="px-4 py-3 text-right font-semibold text-white">
-                              {product.totalPrice}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            return (
+                              <button
+                                className={cn(
+                                  "flex w-full items-center justify-between gap-3 rounded-[5px] px-3 py-2 text-left transition",
+                                  isSelected
+                                    ? "bg-[#315EFF] text-white"
+                                    : "text-[#D6E0F1] hover:bg-white/[.06]"
+                                )}
+                                key={`${productKey}-${variant.spmid}-${variant.size}`}
+                                onClick={() => {
+                                  setSelectedUniformSizes((current) => ({
+                                    ...current,
+                                    [productKey]: variant.spmid
+                                  }));
+                                  setOpenUniformSizeMenus((current) => ({
+                                    ...current,
+                                    [productKey]: false
+                                  }));
+                                }}
+                                type="button"
+                              >
+                                <span className="text-[12px] font-bold">
+                                  Size {variant.size}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                                    isSelected
+                                      ? "border-white/25 bg-white/15 text-white"
+                                      : "border-[#7C3AED]/30 bg-[#7C3AED]/18 text-[#C4B5FD]"
+                                  )}
+                                >
+                                  SPMID {variant.spmid}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  </label>
+                  <div>
+                    <p className="text-[11px] font-semibold text-[#AFC0D9]">Default Qty</p>
+                    <p className="mt-2 text-[14px] font-bold text-white">
+                      {selectedVariant?.defaultQty || "-"}
+                    </p>
                   </div>
-                ) : null}
+                  <div>
+                    <p className="text-[11px] font-semibold text-[#AFC0D9]">
+                      Unit Price (Rs.)
+                    </p>
+                    <p className="mt-2 text-[14px] font-bold text-white">
+                      {selectedVariant?.unitPrice || "-"}
+                    </p>
+                  </div>
+                </div>
               </section>
             );
           })}

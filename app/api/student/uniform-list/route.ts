@@ -10,7 +10,69 @@ const UNIFORM_LIST_AUTHORIZATION =
 const UNIFORM_LIST_COOKIE =
   "AWSALB=TK1MlxHsKsCJOu3fuwtm6cegRN5QiX0mbkct3PHlNImmsvoh2XvfCEVIcTQ4Uipgggjn7ULDHEkDFbUWUxL6MMCjAXMpP1SOuHJZnyi43b8sLQuVw5t8cU2nzyTt; AWSALBCORS=TK1MlxHsKsCJOu3fuwtm6cegRN5QiX0mbkct3PHlNImmsvoh2XvfCEVIcTQ4Uipgggjn7ULDHEkDFbUWUxL6MMCjAXMpP1SOuHJZnyi43b8sLQuVw5t8cU2nzyTt; _csrf=6643f357a716dee23395961ce7b02c91b3c2df834f9979ad236e4de3ae752de1a%3A2%3A%7Bi%3A0%3Bs%3A5%3A%22_csrf%22%3Bi%3A1%3Bs%3A32%3A%22_TkQ4BHcjdbVsdmmvQhXerxgFbVr-DjF%22%3B%7D";
 const UNIFORM_LIST_USER_ID = "1608043";
-const UNIFORM_LIST_ACADEMIC_YEAR_ID = "181";
+const UNIFORM_LIST_ACADEMIC_YEAR_IDS = Array.from(
+  new Set(
+    [
+      ...(process.env.UNIFORM_LIST_ACADEMIC_YEAR_IDS ||
+        process.env.UNIFORM_LIST_ACADEMIC_YEAR_ID ||
+        "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      "201",
+      "181"
+    ]
+  )
+);
+
+function readPayloadMessage(payload: unknown, fallback: string) {
+  if (payload && typeof payload === "object" && "message" in payload) {
+    return String((payload as { message: unknown }).message || fallback);
+  }
+
+  if (payload && typeof payload === "object" && "error" in payload) {
+    return String((payload as { error: unknown }).error || fallback);
+  }
+
+  return fallback;
+}
+
+function readPayloadStatus(payload: unknown, fallback: boolean) {
+  if (payload && typeof payload === "object" && "status" in payload) {
+    return Boolean((payload as { status: unknown }).status);
+  }
+
+  if (payload && typeof payload === "object" && "success" in payload) {
+    return Boolean((payload as { success: unknown }).success);
+  }
+
+  return fallback;
+}
+
+function readPayloadData(payload: unknown) {
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return (payload as { data: unknown }).data;
+  }
+
+  return payload;
+}
+
+function hasUniformProducts(payload: unknown) {
+  const data = readPayloadData(payload);
+
+  return (
+    data &&
+    typeof data === "object" &&
+    Array.isArray((data as { products_list?: unknown }).products_list) &&
+    ((data as { products_list: unknown[] }).products_list || []).some(
+      (group) =>
+        group &&
+        typeof group === "object" &&
+        Array.isArray((group as { products?: unknown }).products) &&
+        ((group as { products: unknown[] }).products || []).length > 0
+    )
+  );
+}
 
 function readNestedValue(source: unknown, keys: string[]): string {
   if (!source || typeof source !== "object") {
@@ -90,39 +152,72 @@ export async function POST(request: NextRequest) {
 
   try {
     const studentId = await getStudentId(admissionNo);
-    const formData = new FormData();
-    formData.set("admission_no", admissionNo);
-    formData.set("student_id", studentId);
-    formData.set("academic_year_id", UNIFORM_LIST_ACADEMIC_YEAR_ID);
-    formData.set("user_id", UNIFORM_LIST_USER_ID);
+    let lastResult:
+      | {
+          academicYearId: string;
+          message: string;
+          payload: unknown;
+          responseStatus: number;
+          success: boolean;
+        }
+      | null = null;
 
-    const response = await fetch(UNIFORM_LIST_URL, {
-      body: formData,
-      headers: {
-        Authorization: UNIFORM_LIST_AUTHORIZATION,
-        Cookie: UNIFORM_LIST_COOKIE,
-        "access-token": UNIFORM_LIST_ACCESS_TOKEN
-      },
-      method: "POST"
-    });
-    const payload = await response.json().catch(() => null);
+    for (const academicYearId of UNIFORM_LIST_ACADEMIC_YEAR_IDS) {
+      const formData = new FormData();
+      formData.set("admission_no", admissionNo);
+      formData.set("student_id", studentId);
+      formData.set("academic_year_id", academicYearId);
+      formData.set("user_id", UNIFORM_LIST_USER_ID);
 
-    if (!response.ok) {
+      const response = await fetch(UNIFORM_LIST_URL, {
+        body: formData,
+        headers: {
+          Authorization: UNIFORM_LIST_AUTHORIZATION,
+          Cookie: UNIFORM_LIST_COOKIE,
+          "access-token": UNIFORM_LIST_ACCESS_TOKEN
+        },
+        method: "POST"
+      });
+      const payload = await response.json().catch(() => null);
+      const success = response.ok && readPayloadStatus(payload, response.ok);
+      const message = readPayloadMessage(
+        payload,
+        success ? "Uniform list fetched successfully." : "Unable to fetch uniform list."
+      );
+
+      lastResult = {
+        academicYearId,
+        message,
+        payload,
+        responseStatus: response.status,
+        success
+      };
+
+      if (success && hasUniformProducts(payload)) {
+        break;
+      }
+    }
+
+    if (!lastResult) {
+      throw new Error("Unable to fetch uniform list.");
+    }
+
+    if (!lastResult.success) {
       return NextResponse.json(
         {
-          message:
-            payload && typeof payload === "object" && "message" in payload
-              ? String(payload.message || "Unable to fetch uniform list.")
-              : "Unable to fetch uniform list.",
+          academicYearId: lastResult.academicYearId,
+          data: readPayloadData(lastResult.payload),
+          message: lastResult.message,
           success: false
         },
-        { status: response.status }
+        { status: lastResult.responseStatus === 200 ? 400 : lastResult.responseStatus }
       );
     }
 
     return NextResponse.json({
-      data: payload,
-      message: "Uniform list fetched successfully.",
+      academicYearId: lastResult.academicYearId,
+      data: readPayloadData(lastResult.payload),
+      message: lastResult.message,
       studentId,
       success: true
     });
